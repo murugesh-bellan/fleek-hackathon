@@ -16,6 +16,12 @@ export const config = {
     /** Cheap/fast work: classification, small extractions, supplier sim. */
     fast: process.env.MODEL_FAST ?? 'gpt-4o-mini',
   },
+  sellerLlm: {
+    provider: 'openrouter',
+    apiKey: process.env.OPENROUTER_API_KEY ?? '',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    model: 'deepseek/deepseek-v4-flash',
+  },
   wassist: {
     apiKey: process.env.WASSIST_API_KEY ?? '',
     /** Wassist platform API host (not your tunnel). */
@@ -59,4 +65,11 @@ export function requireLlmKey(): string {
     throw new Error('LLM_API_KEY is not set. Copy .env.example to .env and fill it in.');
   }
   return config.llm.apiKey;
+}
+
+export function requireSellerLlmKey(): string {
+  if (!config.sellerLlm.apiKey) {
+    throw new Error('OPENROUTER_API_KEY is not set. Add it to your .env file.');
+  }
+  return config.sellerLlm.apiKey;
 }

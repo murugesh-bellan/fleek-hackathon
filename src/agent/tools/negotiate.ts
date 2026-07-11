@@ -10,7 +10,10 @@ import { negotiateSelections } from '../../negotiation.js';
  * supplier(s), autonomously within the mandate. Returns, per option, whether
  * it CLOSED (with final terms) or ESCALATED (terms fell outside the mandate).
  */
-export function makeNegotiateTool(buyerPhone: string) {
+export function makeNegotiateTool(
+  buyerPhone: string,
+  onNegotiationStart?: () => void | Promise<void>,
+) {
   return defineTool({
     name: 'negotiate',
     label: 'Negotiate',
@@ -56,6 +59,7 @@ export function makeNegotiateTool(buyerPhone: string) {
         mandateId: params.mandateId,
         baleIds: params.baleIds,
       });
+      await onNegotiationStart?.();
       const outcomes = await negotiateSelections(params.mandateId, params.baleIds);
       const text = outcomes
         .map((o) => {

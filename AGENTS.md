@@ -63,11 +63,12 @@ npm run seed           # fuzzy bulk-bale inventory + demo buyer + web catalog pr
 
 Required env (see `.env.example`):
 
-- `LLM_API_KEY` (or `OPENAI_API_KEY`), `DATABASE_URL`
+- `LLM_API_KEY` (or `OPENAI_API_KEY`), `OPENROUTER_API_KEY`, `DATABASE_URL`
 - For WhatsApp: `WASSIST_API_KEY`, `PUBLIC_WEBHOOK_URL`
 - Leave `WASSIST_WEBHOOK_SECRET` **empty for BYOA** (BYOA deliveries are unsigned). Only set it to the dashboard signing secret if you switch to signed platform webhooks (different payload shape)
 - Abhi replies via `reply_callback` only (webhook ack returns `{}` with no customer-facing `content`) — not the Conversations Send Message API
 - Optional model overrides: `MODEL_REASONING`, `MODEL_FAST`
+- Sanket always uses OpenRouter model `deepseek/deepseek-v4-flash`; Abhi remains on the `LLM_*` provider
 - Optional `WHATSAPP_NUMBER` for the landing-page `wa.me` CTA (default sandbox `447424845871`)
 - Optional `LOG_LEVEL` (`debug` | `info` | `warn` | `error`, default `info`) — HTTP via `hono/logger`; WhatsApp path emits JSON lines (`webhook.*`, `inbound.*`, `abhi.tool`, `reply_callback.*`)
 

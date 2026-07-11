@@ -24,7 +24,7 @@ export interface SellerMessage {
 }
 
 interface PendingReply {
-  resolve: (reply: { text: string; auto: boolean }) => void;
+  resolve: (reply: { text: string; auto: boolean; reset?: boolean }) => void;
   timer: NodeJS.Timeout;
 }
 
@@ -77,11 +77,11 @@ class SellerChannel extends EventEmitter {
    * `submitReply`, or after `timeoutMs` with `auto: true` so a live demo never
    * hangs if the seller doesn't click. Only one wait is active at a time.
    */
-  awaitReply(timeoutMs: number): Promise<{ text: string; auto: boolean }> {
+  awaitReply(timeoutMs: number): Promise<{ text: string; auto: boolean; reset?: boolean }> {
     // If a previous wait is somehow still pending, auto-resolve it first.
     if (this.pending) {
       clearTimeout(this.pending.timer);
-      this.pending.resolve({ text: '', auto: true });
+      this.pending.resolve({ text: '', auto: true, reset: true });
       this.pending = null;
     }
     return new Promise((resolve) => {
@@ -107,7 +107,7 @@ class SellerChannel extends EventEmitter {
     this.log = [];
     if (this.pending) {
       clearTimeout(this.pending.timer);
-      this.pending.resolve({ text: '', auto: true });
+      this.pending.resolve({ text: '', auto: true, reset: true });
       this.pending = null;
     }
     this.emit('reset');

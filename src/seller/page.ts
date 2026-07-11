@@ -78,7 +78,7 @@ export const sellerPageHtml = `<!doctype html>
         <div class="sub" id="status">supply-side agent · online</div>
       </div>
     </header>
-    <div id="log"><div class="empty" id="empty">Waiting for a buyer match…<br>Trigger a negotiation on the buyer side and it'll land here.</div></div>
+    <div id="log"></div>
     <div class="quick" id="quick"></div>
     <footer>
       <input id="text" placeholder="Message" autocomplete="off" />
@@ -88,7 +88,6 @@ export const sellerPageHtml = `<!doctype html>
 <script>
   const log = document.getElementById('log');
   const quick = document.getElementById('quick');
-  const empty = document.getElementById('empty');
   const seen = new Set();
 
   function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -102,7 +101,6 @@ export const sellerPageHtml = `<!doctype html>
 
   function render(m){
     if (seen.has(m.id)) return; seen.add(m.id);
-    if (empty) empty.remove();
     quick.innerHTML = '';
     const side = m.from === 'seller' ? 'seller' : (m.from === 'system' ? 'system' : 'agent');
     const row = document.createElement('div');

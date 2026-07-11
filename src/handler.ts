@@ -119,7 +119,12 @@ async function processInboundLocked(inbound: InboundMessage): Promise<string> {
     let reply: string;
     let catalogPayloads: ReplyPayload[] = [];
     if (role === 'buyer') {
-      const result = await runAbhiTurn(from, history, body, image);
+      const result = await runAbhiTurn(from, history, body, image, async () => {
+        await deliver(
+          replyCallback,
+          "I've found a strong match — your agent is negotiating with the supplier now. I'll update you here as soon as I have the outcome.",
+        );
+      });
       reply = result.reply || EMPTY_REPLY_FALLBACK;
       catalogPayloads = buildCatalogPayloads(extractCatalogMatches(result.toolExecs));
       await saveThread({
@@ -200,6 +205,7 @@ async function runAbhiTurn(
   history: AgentSession['messages'],
   userMessage: string,
   imageUrl: string | null,
+  onNegotiationStart?: () => void | Promise<void>,
 ): Promise<{ reply: string; history: AgentSession['messages']; toolExecs: ToolExec[] }> {
   const toolExecs: ToolExec[] = [];
   const session = await buildAgent({
@@ -209,6 +215,7 @@ async function runAbhiTurn(
     // Abhi *sees* the photo via the vision attachment below; this additionally
     // gives him search_by_image over it, to match it against the catalog index.
     inboundImage: imageUrl,
+    onNegotiationStart,
     onToolResult: (exec) => {
       toolExecs.push(exec);
       log.info('abhi.tool', {

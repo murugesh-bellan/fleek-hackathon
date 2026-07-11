@@ -59,6 +59,11 @@ async function main(): Promise<void> {
       buyerPhone: BUYER_PHONE,
       history,
       onToolResult: (exec) => toolExecs.push(exec),
+      onNegotiationStart: () => {
+        console.log(
+          "\n\nabhi › I've found a strong match — your agent is negotiating with the supplier now. I'll update you here as soon as I have the outcome.",
+        );
+      },
     });
     try {
       await session.prompt(line);

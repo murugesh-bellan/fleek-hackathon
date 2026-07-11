@@ -46,6 +46,11 @@ sellerRoutes.post('/seller/reply', async (c) => {
   const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
   const text = typeof body.text === 'string' ? body.text.trim() : '';
   if (!text) return c.json({ ok: false, error: 'empty' }, 400);
+  if (text.toLowerCase() === 'new') {
+    sellerChannel.reset();
+    log.info('seller.reset', { source: 'chat' });
+    return c.json({ ok: true, reset: true });
+  }
   const msg = sellerChannel.submitReply(text);
   log.info('seller.reply', { len: text.length });
   return c.json({ ok: true, id: msg.id });

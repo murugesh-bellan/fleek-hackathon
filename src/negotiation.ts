@@ -60,6 +60,7 @@ export async function negotiateBale(
     done: false,
     lastSupplierTerms: null,
   };
+  let sellerHandoffActive = false;
 
   await setMandateStatus(mandate.id, 'negotiating');
 
@@ -67,7 +68,10 @@ export async function negotiateBale(
   // approve the counteroffer before the buyer's agent starts working the deal.
   if (config.seller.enabled) {
     const handoff = await runSellerHandoff({ mandate, bale, supplier, contract });
-    runtime.anchor = handoff.anchorPrice;
+    if (!handoff.cancelled) {
+      runtime.anchor = handoff.anchorPrice;
+      sellerHandoffActive = true;
+    }
   }
 
   const session = await buildAgent({ persona: 'sanket', sanketRuntime: runtime });
@@ -97,7 +101,7 @@ export async function negotiateBale(
   }
 
   // Seller-POV: report the outcome back to the human seller's console.
-  if (config.seller.enabled) {
+  if (config.seller.enabled && sellerHandoffActive) {
     if (neg.state === 'CLOSED' && neg.currentOffer) {
       const t = neg.currentOffer;
       postSellerOutcome(

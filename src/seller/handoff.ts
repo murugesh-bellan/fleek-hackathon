@@ -18,6 +18,7 @@ export interface SellerHandoffResult {
   anchorPrice: number;
   approved: boolean;
   auto: boolean;
+  cancelled: boolean;
 }
 
 function round2(n: number): number {
@@ -152,6 +153,11 @@ export async function runSellerHandoff(args: {
   // 3) Wait for the seller's approval (auto-send on timeout so a demo never hangs).
   const reply = await sellerChannel.awaitReply(config.seller.approvalTimeoutMs);
 
+  if (reply.reset) {
+    log.info('seller.handoff.cancelled', { reason: 'new_thread' });
+    return { anchorPrice: rec.price, approved: false, auto: false, cancelled: true };
+  }
+
   let anchor = rec.price;
   const approved = true;
   if (!reply.auto) {
@@ -173,7 +179,7 @@ export async function runSellerHandoff(args: {
   );
 
   log.info('seller.handoff.done', { anchor, approved, auto: reply.auto });
-  return { anchorPrice: anchor, approved, auto: reply.auto };
+  return { anchorPrice: anchor, approved, auto: reply.auto, cancelled: false };
 }
 
 /** Post the final negotiation outcome to the seller console. */

@@ -29,6 +29,13 @@ describe('sellerChannel', () => {
     sellerChannel.reset();
     expect(sellerChannel.history()).toHaveLength(0);
   });
+
+  it('reset cancels an active approval wait without reviving the old thread', async () => {
+    const pending = sellerChannel.awaitReply(5_000);
+    sellerChannel.reset();
+    await expect(pending).resolves.toEqual({ text: '', auto: true, reset: true });
+    expect(sellerChannel.history()).toEqual([]);
+  });
 });
 
 describe('seller routes', () => {
@@ -41,6 +48,7 @@ describe('seller routes', () => {
     const body = await res.text();
     expect(body).toContain('Fleek Sourcing');
     expect(body).toContain('/seller/stream');
+    expect(body).not.toContain('Waiting for a buyer match');
   });
 
   it('POST /seller/reply rejects an empty message', async () => {
@@ -61,5 +69,17 @@ describe('seller routes', () => {
     expect(res.status).toBe(200);
     const last = sellerChannel.history().at(-1);
     expect(last).toMatchObject({ from: 'seller', text: 'send it' });
+  });
+
+  it('POST /seller/reply treats new as a clean-thread command', async () => {
+    sellerChannel.post('agent', 'old context');
+    const res = await app.request('/seller/reply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'new' }),
+    });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ ok: true, reset: true });
+    expect(sellerChannel.history()).toEqual([]);
   });
 });

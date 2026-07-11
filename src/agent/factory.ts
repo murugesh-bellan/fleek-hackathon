@@ -16,7 +16,7 @@ import {
   type Skill,
   type ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
-import { config, requireLlmKey } from '../config.js';
+import { config, requireLlmKey, requireSellerLlmKey } from '../config.js';
 import { getBuyer } from '../db/index.js';
 import type { NegotiationRuntime } from '../negotiation.js';
 import { loadPersona } from '../personas.js';
@@ -54,6 +54,8 @@ export interface BuildAgentOptions {
   inboundImage?: string | null;
   /** Called for each tool execution (for the memory brain / observability). */
   onToolResult?: (exec: ToolExec) => void;
+  /** Abhi only — notify the buyer as soon as a valid negotiation starts. */
+  onNegotiationStart?: () => void | Promise<void>;
   /**
    * Sanket only — the negotiation runtime the Sanket tools close over. Required
    * when persona === 'sanket'.
@@ -77,6 +79,9 @@ function ensureAuth(): { authStorage: AuthStorage; modelRegistry: ModelRegistry 
   }
   return { authStorage, modelRegistry };
 }
+
+const sellerAuthStorage = AuthStorage.create();
+const sellerModelRegistry = ModelRegistry.create(sellerAuthStorage);
 
 function resolveModel(): Model<Api> {
   const { modelRegistry: registry } = ensureAuth();
@@ -103,6 +108,30 @@ let _model: Model<Api> | undefined;
 function model(): Model<Api> {
   if (!_model) _model = resolveModel();
   return _model;
+}
+
+let _sellerModel: Model<Api> | undefined;
+function sellerModel(): Model<Api> {
+  if (_sellerModel) return _sellerModel;
+  sellerAuthStorage.setRuntimeApiKey(config.sellerLlm.provider, requireSellerLlmKey());
+  _sellerModel = {
+    id: config.sellerLlm.model,
+    name: config.sellerLlm.model,
+    provider: config.sellerLlm.provider,
+    api: 'openai-completions',
+    baseUrl: config.sellerLlm.baseUrl,
+    reasoning: true,
+    thinkingLevelMap: { off: 'none' },
+    compat: {
+      thinkingFormat: 'openrouter',
+      maxTokensField: 'max_tokens',
+    },
+    input: ['text'],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 65_536,
+    maxTokens: 32_768,
+  } as Model<Api>;
+  return _sellerModel;
 }
 
 // ---------------------------------------------------------------------------
@@ -163,11 +192,12 @@ function abhiTools(
   buyerPhone: string,
   onboarded: boolean,
   inboundImage?: string | null,
+  onNegotiationStart?: () => void | Promise<void>,
 ): ToolDefinition[] {
   const sourcing: ToolDefinition[] = [
     makeExtractMandateTool(buyerPhone),
     makeFindMatchesTool(buyerPhone),
-    makeNegotiateTool(buyerPhone),
+    makeNegotiateTool(buyerPhone, onNegotiationStart),
   ];
   // Only offered when the buyer actually attached a photo to this message.
   if (inboundImage) sourcing.push(makeSearchByImageTool(inboundImage));
@@ -213,14 +243,23 @@ export async function buildAgent(opts: BuildAgentOptions): Promise<AgentSession>
 
   // Surface a clear error if no key is configured (deferred to first build so
   // importing the module — e.g. in tests without a key — doesn't throw).
-  const auth = ensureAuth();
+  const auth =
+    persona === 'abhi'
+      ? ensureAuth()
+      : { authStorage: sellerAuthStorage, modelRegistry: sellerModelRegistry };
+  if (persona === 'sanket') requireSellerLlmKey();
 
   let systemPrompt: string;
   let tools: ToolDefinition[];
   if (persona === 'abhi') {
     const buyer = opts.buyerPhone ? await getBuyer(opts.buyerPhone) : null;
     systemPrompt = abhiSystemPrompt(buyer);
-    tools = abhiTools(opts.buyerPhone ?? '', !!buyer?.onboardedAt, opts.inboundImage);
+    tools = abhiTools(
+      opts.buyerPhone ?? '',
+      !!buyer?.onboardedAt,
+      opts.inboundImage,
+      opts.onNegotiationStart,
+    );
   } else {
     if (!opts.sanketRuntime) {
       throw new Error('buildAgent: sanketRuntime is required for persona "sanket"');
@@ -230,7 +269,7 @@ export async function buildAgent(opts: BuildAgentOptions): Promise<AgentSession>
   }
 
   const { session } = await createAgentSession({
-    model: model(),
+    model: persona === 'abhi' ? model() : sellerModel(),
     thinkingLevel: 'off',
     authStorage: auth.authStorage,
     modelRegistry: auth.modelRegistry,
