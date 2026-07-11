@@ -18,6 +18,8 @@ import type {
 export const buyers = pgTable('buyers', {
   phone: text('phone').primaryKey(),
   name: text('name').notNull(),
+  company: text('company'),
+  onboardedAt: text('onboarded_at'),
   profileJson: jsonb('profile_json').$type<BuyerProfile>().notNull(),
 });
 

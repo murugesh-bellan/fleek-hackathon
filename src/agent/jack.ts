@@ -5,20 +5,59 @@ import { extractMandate } from '../mandate.js';
 import { llmMatcher } from '../matching.js';
 import { negotiateSelections } from '../negotiation.js';
 import { learnFromInteraction } from '../memory.js';
-import { getBuyer, getMandate } from '../db/index.js';
+import { getBuyer, getMandate, upsertBuyer } from '../db/index.js';
 import type { Buyer } from '../types.js';
 
 /** Build Jack's dynamic system prompt: persona + buyer context. */
 function jackSystem(buyer: Buyer | null): string {
   const persona = loadPersona('jack');
-  const ctx = buyer
-    ? `\n\n---\nBUYER CONTEXT\nName: ${buyer.name}\nKnown preferences: ${
-        buyer.profile.brandsPursued.length
-          ? buyer.profile.brandsPursued.join(', ')
-          : '(none yet — this may be a new buyer)'
-      }${buyer.profile.notes.length ? `\nNotes: ${buyer.profile.notes.join('; ')}` : ''}`
-    : '\n\n---\nBUYER CONTEXT\nNew buyer, no profile yet.';
+  if (!buyer || !buyer.onboardedAt) {
+    return (
+      persona +
+      '\n\n---\nBUYER CONTEXT\nNew, unonboarded buyer. You have exactly one tool right now: complete_onboarding. ' +
+      "Do not discuss sourcing yet. Greet them, briefly say who you are, and ask for their name and their store/company name — one short message, both in one ask. Once they've given you both, call complete_onboarding. If they open with a sourcing request before you have their details, acknowledge it briefly but still get their name and company first."
+    );
+  }
+  const ctx = `\n\n---\nBUYER CONTEXT\nName: ${buyer.name}${buyer.company ? ` (${buyer.company})` : ''}\nKnown preferences: ${
+    buyer.profile.brandsPursued.length
+      ? buyer.profile.brandsPursued.join(', ')
+      : '(none yet)'
+  }${buyer.profile.notes.length ? `\nNotes: ${buyer.profile.notes.join('; ')}` : ''}`;
   return persona + ctx;
+}
+
+/** complete_onboarding tool: captures name + company for a first-time buyer. */
+function completeOnboardingTool(buyerPhone: string): Tool {
+  return {
+    def: {
+      name: 'complete_onboarding',
+      description:
+        "Record a new buyer's name and store/company name. Call this once, as soon as you have both, before doing anything else.",
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: "The buyer's name." },
+          company: { type: 'string', description: 'Their store or company name.' },
+        },
+        required: ['name', 'company'],
+        additionalProperties: false,
+      },
+    },
+    handler: async (input) => {
+      const name = String(input.name ?? '').trim();
+      const company = String(input.company ?? '').trim();
+      if (!name || !company) return { error: 'Both name and company are required.' };
+      const existing = await getBuyer(buyerPhone);
+      await upsertBuyer({
+        phone: buyerPhone,
+        name,
+        company,
+        onboardedAt: new Date().toISOString(),
+        profile: existing?.profile ?? { brandsPursued: [], notes: [] },
+      });
+      return { onboarded: true, name, company };
+    },
+  };
 }
 
 /** extract_mandate tool: NL demand -> structured mandate (+ missing fields). */
@@ -125,8 +164,9 @@ const negotiateTool: Tool = {
   },
 };
 
-/** Jack's full tool set for a given buyer. */
-export function jackTools(buyerPhone: string): Tool[] {
+/** Jack's tool set for a given buyer — sourcing tools unlock only once onboarded. */
+export function jackTools(buyerPhone: string, onboarded: boolean): Tool[] {
+  if (!onboarded) return [completeOnboardingTool(buyerPhone)];
   return [extractMandateTool(buyerPhone), findMatchesTool, negotiateTool];
 }
 
@@ -144,7 +184,7 @@ export async function runJack(
   const result = await runAgent({
     system: jackSystem(buyer),
     history: withUser,
-    tools: jackTools(buyerPhone),
+    tools: jackTools(buyerPhone, !!buyer?.onboardedAt),
   });
   // Memory brain: distil revealed preferences into the buyer's profile.
   await learnFromInteraction(buyerPhone, result.toolCalls);

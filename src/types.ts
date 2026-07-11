@@ -31,6 +31,9 @@ export interface SupplierProfile {
 export interface Buyer {
   phone: string;
   name: string;
+  company: string | null;
+  /** ISO timestamp once onboarding (name + company captured) is complete; null until then. */
+  onboardedAt: string | null;
   profile: BuyerProfile;
 }
 

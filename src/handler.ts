@@ -15,8 +15,15 @@ export async function processInbound(inbound: InboundMessage): Promise<string> {
   const supplier = await getSupplierByPhone(from);
   const isSupplier = !!supplier;
   if (!isSupplier && !(await getBuyer(from))) {
-    // First contact — onboard as a buyer.
-    await upsertBuyer({ phone: from, name: 'WhatsApp buyer', profile: { brandsPursued: [], notes: [] } });
+    // First contact — create a bare buyer row; Jack runs the onboarding
+    // conversation (name + company) via complete_onboarding before anything else.
+    await upsertBuyer({
+      phone: from,
+      name: '',
+      company: null,
+      onboardedAt: null,
+      profile: { brandsPursued: [], notes: [] },
+    });
   }
 
   const role: 'buyer' | 'supplier' = isSupplier ? 'supplier' : 'buyer';
