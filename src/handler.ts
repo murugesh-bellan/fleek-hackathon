@@ -9,7 +9,7 @@ import { type InboundMessage, replyViaCallback } from './wassist.js';
  * Humans talk only to Abhi; Sanket runs behind the scenes during negotiation.
  */
 export async function processInbound(inbound: InboundMessage): Promise<string> {
-  const { from, body, replyCallback } = inbound;
+  const { from, body, replyCallback, image } = inbound;
 
   const supplier = await getSupplierByPhone(from);
   const isSupplier = !!supplier;
@@ -34,7 +34,7 @@ export async function processInbound(inbound: InboundMessage): Promise<string> {
 
   let reply: string;
   if (role === 'buyer') {
-    const result = await runAbhiTurn(from, history, body);
+    const result = await runAbhiTurn(from, history, body, image);
     reply = result.reply;
     await saveThread({
       phone: from,
@@ -57,16 +57,21 @@ async function runAbhiTurn(
   buyerPhone: string,
   history: AgentSession['messages'],
   userMessage: string,
+  image?: string | null,
 ): Promise<{ reply: string; history: AgentSession['messages'] }> {
   const toolExecs: ToolExec[] = [];
   const session = await buildAgent({
     persona: 'abhi',
     buyerPhone,
     history,
+    inboundImage: image,
     onToolResult: (exec) => toolExecs.push(exec),
   });
   try {
-    await session.prompt(userMessage);
+    // The photo itself reaches the model through search_by_image (which closes
+    // over it). The prompt only has to tell Abhi a photo is there to search —
+    // a photo-only WhatsApp message has no text at all.
+    await session.prompt(promptFor(userMessage, image));
     const reply = lastAssistantText(session);
     // Memory brain: distil revealed preferences into the buyer's profile.
     await learnFromInteraction(buyerPhone, toolExecs);
@@ -74,6 +79,19 @@ async function runAbhiTurn(
   } finally {
     session.dispose();
   }
+}
+
+/**
+ * Build the turn's prompt. A WhatsApp photo can arrive with a caption or with
+ * no text at all, so announce the photo either way — otherwise a photo-only
+ * message reaches Abhi as an empty string.
+ */
+function promptFor(userMessage: string, image?: string | null): string {
+  if (!image) return userMessage;
+  const note =
+    '[The buyer attached a photo. Use search_by_image to find lots that look like it, ' +
+    'then talk them through the closest options.]';
+  return userMessage.trim() ? `${userMessage}\n\n${note}` : note;
 }
 
 /** POST the final reply to Wassist reply_callback (or log in local/dev). */

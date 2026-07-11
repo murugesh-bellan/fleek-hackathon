@@ -17,6 +17,9 @@ const fixtureProducts: Product[] = [
     originalPrice: null,
     currency: 'GBP',
     pricePerPiece: 9,
+    units: 15,
+    imageUrl: 'https://cdn.example.test/mens-1.webp',
+    sourceUrl: null,
   },
   {
     id: 2,
@@ -26,6 +29,9 @@ const fixtureProducts: Product[] = [
     originalPrice: null,
     currency: 'GBP',
     pricePerPiece: 8.66,
+    units: 15,
+    imageUrl: null,
+    sourceUrl: null,
   },
   {
     id: 1,
@@ -35,6 +41,9 @@ const fixtureProducts: Product[] = [
     originalPrice: 193.8,
     currency: 'GBP',
     pricePerPiece: 9.15,
+    units: 12,
+    imageUrl: 'https://cdn.example.test/womens-1.webp',
+    sourceUrl: null,
   },
 ];
 

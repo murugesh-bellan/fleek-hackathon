@@ -22,6 +22,17 @@ function ProductCard(props: { product: Product }) {
   const prefill = `Hi Abhi — I'm interested in "${product.name}" (${formatPrice(product.price)}). Can you source it?`;
   return (
     <li class="product-card">
+      {product.imageUrl ? (
+        <img
+          class="product-image"
+          src={product.imageUrl}
+          alt={product.name}
+          loading="lazy"
+          decoding="async"
+        />
+      ) : (
+        <div class="product-image product-image-empty" aria-hidden="true" />
+      )}
       <div class="product-body">
         <h3 class="product-name">{product.name}</h3>
         <p class="product-price">
