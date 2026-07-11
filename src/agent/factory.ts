@@ -62,16 +62,26 @@ export interface BuildAgentOptions {
 }
 
 // ---------------------------------------------------------------------------
-// Shared, process-wide auth + model setup (created once).
+// Shared, process-wide auth + model setup (lazy — importing this module must
+// not require LLM_API_KEY, so createApp() unit tests stay DB/LLM-free).
 // ---------------------------------------------------------------------------
 
-const authStorage = AuthStorage.create();
-authStorage.setRuntimeApiKey(config.llm.provider, requireLlmKey());
-const modelRegistry = ModelRegistry.create(authStorage);
+let authStorage: AuthStorage | undefined;
+let modelRegistry: ModelRegistry | undefined;
+
+function ensureAuth(): { authStorage: AuthStorage; modelRegistry: ModelRegistry } {
+  if (!authStorage || !modelRegistry) {
+    authStorage = AuthStorage.create();
+    authStorage.setRuntimeApiKey(config.llm.provider, requireLlmKey());
+    modelRegistry = ModelRegistry.create(authStorage);
+  }
+  return { authStorage, modelRegistry };
+}
 
 function resolveModel(): Model<Api> {
+  const { modelRegistry: registry } = ensureAuth();
   if (config.llm.provider === 'openai') {
-    const found = modelRegistry.find('openai', config.models.reasoning);
+    const found = registry.find('openai', config.models.reasoning);
     if (found) return found;
   }
 
@@ -203,7 +213,7 @@ export async function buildAgent(opts: BuildAgentOptions): Promise<AgentSession>
 
   // Surface a clear error if no key is configured (deferred to first build so
   // importing the module — e.g. in tests without a key — doesn't throw).
-  requireLlmKey();
+  const auth = ensureAuth();
 
   let systemPrompt: string;
   let tools: ToolDefinition[];
@@ -222,8 +232,8 @@ export async function buildAgent(opts: BuildAgentOptions): Promise<AgentSession>
   const { session } = await createAgentSession({
     model: model(),
     thinkingLevel: 'off',
-    authStorage,
-    modelRegistry,
+    authStorage: auth.authStorage,
+    modelRegistry: auth.modelRegistry,
     resourceLoader: makeLoader(systemPrompt, skillFor(persona)),
     noTools: 'builtin',
     customTools: tools,
