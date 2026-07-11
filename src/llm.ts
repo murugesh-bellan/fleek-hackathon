@@ -1,6 +1,13 @@
 import OpenAI from 'openai';
 import { config, requireOpenAIKey } from './config.js';
 
+/**
+ * Thin single-shot LLM helpers for the extraction modules (mandate, matching,
+ * supplier-sim). The agent harness itself runs on the Pi SDK (see
+ * `src/agent/factory.ts`); these are only for one-shot structured completions
+ * called from inside tool handlers, which the Pi SDK is not shaped to serve.
+ */
+
 let _client: OpenAI | null = null;
 
 function client(): OpenAI {
@@ -8,27 +15,13 @@ function client(): OpenAI {
   return _client;
 }
 
-/** A JSON Schema object for tool parameters / structured output. */
+/** A JSON Schema object for structured output. */
 export type JSONSchema = Record<string, unknown>;
 
-/** A conversation message (OpenAI chat message param: user/assistant/tool/system). */
+/** A conversation message (OpenAI chat message param: user/assistant/system). */
 export type Msg = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 
-/** A tool the agent harness can call. */
-export interface ToolDef {
-  name: string;
-  description: string;
-  parameters: JSONSchema;
-}
-
 const DEFAULT_MAX_TOKENS = 4000;
-
-function toOpenAITools(tools: ToolDef[]): OpenAI.Chat.Completions.ChatCompletionTool[] {
-  return tools.map((t) => ({
-    type: 'function',
-    function: { name: t.name, description: t.description, parameters: t.parameters },
-  }));
-}
 
 function withSystem(system: string, messages: Msg[]): Msg[] {
   return [{ role: 'system', content: system }, ...messages];
@@ -86,68 +79,4 @@ export async function generateJSON<T>(opts: {
   } catch {
     throw new Error(`Model returned invalid JSON args: ${call.function.arguments.slice(0, 200)}`);
   }
-}
-
-export interface ToolCall {
-  id: string;
-  name: string;
-  input: Record<string, unknown>;
-}
-
-export interface TurnResult {
-  /** User-facing text the assistant produced this turn (may be empty). */
-  text: string;
-  /** Tool calls the assistant requested (empty when it finished its turn). */
-  toolCalls: ToolCall[];
-  /** The assistant message to append to history for the next turn. */
-  assistantMessage: Msg;
-  stopReason: string | null;
-}
-
-/**
- * One turn of a tool-use loop. The caller executes any returned tool calls,
- * appends the assistant message + one tool message per call, and calls again
- * until `toolCalls` is empty. This is the generic agent-harness step —
- * persona-agnostic; only `system`, `messages`, and `tools` differ.
- */
-export async function runTurn(opts: {
-  system: string;
-  messages: Msg[];
-  tools: ToolDef[];
-  model?: string;
-  maxTokens?: number;
-}): Promise<TurnResult> {
-  const res = await client().chat.completions.create({
-    model: opts.model ?? config.models.reasoning,
-    max_completion_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
-    messages: withSystem(opts.system, opts.messages),
-    tools: toOpenAITools(opts.tools),
-  });
-
-  const choice = res.choices[0];
-  const msg = choice?.message;
-  const toolCalls: ToolCall[] = [];
-  for (const tc of msg?.tool_calls ?? []) {
-    if (tc.type !== 'function') continue;
-    let input: Record<string, unknown> = {};
-    try {
-      input = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
-    } catch {
-      input = {};
-    }
-    toolCalls.push({ id: tc.id, name: tc.function.name, input });
-  }
-
-  const assistantMessage: Msg = {
-    role: 'assistant',
-    content: msg?.content ?? '',
-    ...(msg?.tool_calls?.length ? { tool_calls: msg.tool_calls } : {}),
-  };
-
-  return {
-    text: msg?.content?.trim() ?? '',
-    toolCalls,
-    assistantMessage,
-    stopReason: choice?.finish_reason ?? null,
-  };
 }

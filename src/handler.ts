@@ -1,8 +1,9 @@
 import { config } from './config.js';
-import { runJack } from './agent/jack.js';
+import { buildAgent, lastAssistantText, type ToolExec } from './agent/factory.js';
 import { sendMessage, type InboundMessage } from './wassist.js';
 import { getBuyer, getSupplierByPhone, upsertBuyer, getThread, saveThread } from './db/index.js';
-import type { Msg } from './llm.js';
+import { learnFromInteraction } from './memory.js';
+import type { AgentSession } from '@earendil-works/pi-coding-agent';
 
 /**
  * Resolve persona by counterparty and process one inbound WhatsApp message.
@@ -21,13 +22,13 @@ export async function processInbound(inbound: InboundMessage): Promise<string> {
 
   const role: 'buyer' | 'supplier' = isSupplier ? 'supplier' : 'buyer';
   const thread = (await getThread(from)) ?? { phone: from, role, conversationId, history: [] };
-  const history = thread.history as Msg[];
+  const history = (thread.history ?? []) as AgentSession['messages'];
 
   let reply: string;
   if (role === 'buyer') {
-    const res = await runJack(from, history, body);
-    reply = res.reply;
-    await saveThread({ phone: from, role, conversationId, history: res.history });
+    const { reply: jackReply, history: nextHistory } = await runJackTurn(from, history, body);
+    reply = jackReply;
+    await saveThread({ phone: from, role, conversationId, history: nextHistory });
   } else {
     // Real-supplier inbound (optional hybrid mode). In the core demo, Jill runs
     // in-process during Jack's negotiate tool, so suppliers never text in.
@@ -38,6 +39,30 @@ export async function processInbound(inbound: InboundMessage): Promise<string> {
 
   await deliver(conversationId, reply);
   return reply;
+}
+
+/** Run one Jack turn: build the session, prompt, capture tool execs for memory. */
+async function runJackTurn(
+  buyerPhone: string,
+  history: AgentSession['messages'],
+  userMessage: string,
+): Promise<{ reply: string; history: AgentSession['messages'] }> {
+  const toolExecs: ToolExec[] = [];
+  const session = await buildAgent({
+    persona: 'jack',
+    buyerPhone,
+    history,
+    onToolResult: (exec) => toolExecs.push(exec),
+  });
+  try {
+    await session.prompt(userMessage);
+    const reply = lastAssistantText(session);
+    // Memory brain: distil revealed preferences into the buyer's profile.
+    await learnFromInteraction(buyerPhone, toolExecs);
+    return { reply, history: session.messages };
+  } finally {
+    session.dispose();
+  }
 }
 
 /** Send the reply over WhatsApp, or log it if Wassist isn't configured (local dev). */

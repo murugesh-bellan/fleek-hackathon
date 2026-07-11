@@ -1,7 +1,8 @@
-import { runJack } from '../agent/jack.js';
+import { buildAgent, lastAssistantText, type ToolExec } from '../agent/factory.js';
+import { learnFromInteraction } from '../memory.js';
 import { getBuyer } from '../db/index.js';
 import { closeDb } from '../db/client.js';
-import type { Msg } from '../llm.js';
+import type { AgentSession } from '@earendil-works/pi-coding-agent';
 
 /**
  * Scripted end-to-end demo: buyer -> Jack -> ranked matches -> buyer picks ->
@@ -23,13 +24,27 @@ async function main(): Promise<void> {
   }
 
   console.log(`\n=== Jack & Jill demo — buyer: ${buyer.name} ===\n`);
-  let history: Msg[] = [];
+  let history: AgentSession['messages'] = [];
 
   for (const line of SCRIPT) {
     console.log(`\x1b[36myou  ›\x1b[0m ${line}\n`);
-    const res = await runJack(BUYER_PHONE, history, line);
-    history = res.history;
-    console.log(`\x1b[32mjack ›\x1b[0m ${res.reply}\n`);
+
+    const toolExecs: ToolExec[] = [];
+    const session = await buildAgent({
+      persona: 'jack',
+      buyerPhone: BUYER_PHONE,
+      history,
+      onToolResult: (exec) => toolExecs.push(exec),
+    });
+    try {
+      await session.prompt(line);
+      const reply = lastAssistantText(session);
+      history = session.messages;
+      await learnFromInteraction(BUYER_PHONE, toolExecs);
+      console.log(`\x1b[32mjack ›\x1b[0m ${reply}\n`);
+    } finally {
+      session.dispose();
+    }
     console.log('─'.repeat(72));
   }
   console.log('\n=== demo complete ===\n');

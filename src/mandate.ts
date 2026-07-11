@@ -77,6 +77,6 @@ export async function extractMandate(buyerPhone: string, demand: string): Promis
     rawText: demand,
     status: 'open',
   };
-  await   await insertMandate(mandate);
+  await insertMandate(mandate);
   return { mandate, missing: ex.missing ?? [] };
 }

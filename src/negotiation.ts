@@ -1,100 +1,30 @@
-import { generateJSON, type JSONSchema } from './llm.js';
-import { loadPersona } from './personas.js';
-import { supplierReply } from './supplier-sim.js';
-import { saveNegotiation, saveDeal, getBale, getSupplier, getMandate } from './db/index.js';
+import { buildAgent } from './agent/factory.js';
+import { contractOf, escalationNote } from './contract.js';
+import { saveNegotiation, getBale, getSupplier, getMandate } from './db/index.js';
 import { id } from './ids.js';
-import { contractOf, insideContract, escalationNote } from './contract.js';
 import type {
   Mandate,
   Bale,
   Supplier,
   Negotiation,
-  NegotiationTurn,
   DealTerms,
   MandateContract,
-  Grade,
 } from './types.js';
 
-const MAX_ROUNDS = 7;
-
-type JillAction = 'offer' | 'accept' | 'escalate';
-
-interface JillDecision {
-  action: JillAction;
-  message: string;
-  terms: { pricePerUnit: number; grade: Grade; quantity: number };
-  reasoning: string;
-}
-
-const DECISION_SCHEMA: JSONSchema = {
-  type: 'object',
-  properties: {
-    action: {
-      type: 'string',
-      enum: ['offer', 'accept', 'escalate'],
-      description:
-        "'offer' = send a price/terms proposal to the supplier. 'accept' = the supplier's current terms are inside the contract, close now. 'escalate' = best available terms fall outside the contract; stop and hand back to the buyer.",
-    },
-    message: {
-      type: 'string',
-      description:
-        "For 'offer': your next WhatsApp line to the supplier. For 'accept': your closing confirmation. For 'escalate': a brief note (not sent to the supplier).",
-    },
-    terms: {
-      type: 'object',
-      description: 'The concrete terms this action refers to (your proposed terms, or the terms being accepted/escalated).',
-      properties: {
-        pricePerUnit: { type: 'number' },
-        grade: { type: 'string', enum: ['A', 'B', 'C', 'D'] },
-        quantity: { type: 'integer' },
-      },
-      required: ['pricePerUnit', 'grade', 'quantity'],
-      additionalProperties: false,
-    },
-    reasoning: { type: 'string', description: 'One line: your check against the contract.' },
-  },
-  required: ['action', 'message', 'terms', 'reasoning'],
-  additionalProperties: false,
-};
-
-function renderTranscript(transcript: NegotiationTurn[]): string {
-  if (transcript.length === 0) return '(no messages yet — make your opening offer)';
-  return transcript
-    .map((t) => `${t.speaker === 'jill' ? 'YOU (Jill)' : 'SUPPLIER'}: ${t.message}`)
-    .join('\n');
-}
-
-async function jillDecide(
-  contract: MandateContract,
-  bale: Bale,
-  supplier: Supplier,
-  transcript: NegotiationTurn[],
-): Promise<JillDecision> {
-  const system = `${loadPersona('jill')}
-
----
-YOUR CONTRACT (hard limits — never break)
-Price ceiling: $${contract.priceCeiling}/unit (never agree above)
-Grade floor: ${contract.gradeFloor} (never accept below)
-Quantity: at least ${contract.quantity} units (never close short)
-
-THE BALE
-${bale.description}
-Category/era: ${bale.category}/${bale.era} | brands: ${bale.brands.join(', ')} | stated grade ${bale.grade} | ~${bale.quantity} units | supplier's opening ask: $${bale.askPrice}/unit
-Supplier: ${supplier.name}`;
-
-  const prompt = `NEGOTIATION SO FAR
-${renderTranscript(transcript)}
-
-Decide your next action against the contract.`;
-
-  return generateJSON<JillDecision>({
-    system,
-    messages: [{ role: 'user', content: prompt }],
-    schema: DECISION_SCHEMA,
-    toolName: 'decide',
-    toolDescription: 'Decide the next negotiation action.',
-  });
+/**
+ * Mutable state shared between Jill's tools for one bale negotiation. The tools
+ * (make_offer / accept_deal / escalate) close over this and mutate it as they
+ * run; `negotiateBale` reads the final state after the agent loop settles.
+ */
+export interface NegotiationRuntime {
+  neg: Negotiation;
+  contract: MandateContract;
+  bale: Bale;
+  supplier: Supplier;
+  /** Number of offers made so far (incremented by make_offer). */
+  rounds: number;
+  /** True once accept_deal or escalate has fired. */
+  done: boolean;
 }
 
 /** Negotiate a single bale for a mandate. Autonomous within the contract. */
@@ -116,58 +46,30 @@ export async function negotiateBale(
     outcome: null,
   };
 
-  for (let round = 0; round < MAX_ROUNDS; round++) {
-    const decision = await jillDecide(contract, bale, supplier, neg.transcript);
-    const terms: DealTerms = {
-      pricePerUnit: decision.terms.pricePerUnit,
-      grade: decision.terms.grade,
-      quantity: decision.terms.quantity,
-    };
+  const runtime: NegotiationRuntime = { neg, contract, bale, supplier, rounds: 0, done: false };
 
-    // Round 0 must be an opening offer — there's nothing to accept yet.
-    const action: JillAction = round === 0 && decision.action !== 'offer' ? 'offer' : decision.action;
-
-    if (action === 'accept') {
-      neg.transcript.push({ speaker: 'jill', message: decision.message, offer: terms });
-      if (insideContract(terms, contract)) {
-        neg.state = 'CLOSED';
-        neg.currentOffer = terms;
-        neg.outcome = `Closed at $${terms.pricePerUnit}/unit, grade ${terms.grade}, ${terms.quantity} units.`;
-        await saveNegotiation(neg);
-        await saveDeal({ id: id('deal'), negotiationId: neg.id, terms, status: 'closed' });
-        return neg;
-      }
-      // Guardrail: Jill tried to accept terms outside the contract — escalate instead.
-      neg.state = 'ESCALATED';
-      neg.currentOffer = terms;
-      neg.outcome = escalationNote(terms, contract);
-      await saveNegotiation(neg);
-      return neg;
-    }
-
-    if (action === 'escalate') {
-      neg.state = 'ESCALATED';
-      neg.currentOffer = terms;
-      neg.transcript.push({ speaker: 'jill', message: decision.message, offer: terms });
-      neg.outcome = escalationNote(terms, contract);
-      await saveNegotiation(neg);
-      return neg;
-    }
-
-    // action === 'offer': send to supplier, get their reply, continue.
-    neg.transcript.push({ speaker: 'jill', message: decision.message, offer: terms });
-    neg.currentOffer = terms;
-    neg.state = 'COUNTERING';
-    const reply = await supplierReply(supplier, bale, neg.transcript);
-    neg.transcript.push({ speaker: 'supplier', message: reply });
+  const session = await buildAgent({ persona: 'jill', jillRuntime: runtime });
+  try {
+    await session.prompt(
+      'Begin negotiating the bale above for the buyer. Make your opening offer to the supplier using make_offer, then converge. The moment the supplier terms are inside the contract, call accept_deal. If their best-and-final is outside the contract, call escalate.',
+    );
+  } finally {
+    session.dispose();
   }
 
-  // Ran out of rounds without closing — escalate with the last terms on the table.
-  neg.state = 'ESCALATED';
-  neg.outcome = `No agreement inside the contract after ${MAX_ROUNDS} rounds. ${
-    neg.currentOffer ? escalationNote(neg.currentOffer, contract) : ''
-  }`.trim();
-  await saveNegotiation(neg);
+  // If the agent loop ended without Jill explicitly closing or escalating
+  // (e.g. it ran out of internal steps), force an escalation with the last
+  // terms on the table so the buyer always gets a clear outcome.
+  if (!runtime.done) {
+    neg.state = 'ESCALATED';
+    neg.outcome =
+      (neg.currentOffer
+        ? `No agreement inside the contract. ${escalationNote(neg.currentOffer, contract)}`
+        : 'No agreement reached.') +
+      ' (Jill did not explicitly conclude.)';
+    await saveNegotiation(neg);
+  }
+
   return neg;
 }
 

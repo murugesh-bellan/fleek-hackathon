@@ -8,7 +8,7 @@ A buyer states demand in natural language → **Jack** extracts a structured man
 
 The unsolved, agent-shaped problem downstream of Fleek Sort ("what is this item") is buyer↔supplier **matching + negotiation** — hard because it's async (parties never online together), multi-party, and judgement-under-a-mandate. We build on Sort's output, not the vision layer.
 
-- **Jack** faces the buyer. **Jill** faces the supplier. They're the *same agent harness* — only the system prompt and scoped memory differ. Persona is chosen by who's on the other end of the WhatsApp thread.
+- **Jack** faces the buyer. **Jill** faces the supplier. They are literally the *same agent* — one factory (`src/agent/factory.ts`) builds either persona by swapping the system prompt, the on-demand skill, and the scoped tools. Persona is chosen by who's on the other end of the WhatsApp thread. The agent loop itself runs on the [Pi SDK](https://github.com/earendil-works/pi-coding-agent) (`createAgentSession`).
 - Negotiation is **autonomous within a contract**: `≤ price ceiling, ≥ grade floor, ≥ quantity`. Jill auto-closes inside the mandate and escalates to the buyer only when terms fall outside it.
 - A **memory brain** accretes per-buyer revealed preferences so matching sharpens over time — Fleek's data-flywheel thesis.
 
@@ -27,10 +27,7 @@ WhatsApp ─▶ Wassist ─▶ POST /webhook ─▶ verify sig + dedupe ─▶ A
      Postgres memory brain: buyers · suppliers · inventory_bales · mandates · matches · negotiations · deals
 ```
 
-Key files: `src/agent/harness.ts` (generic tool-use loop), `src/agent/jack.ts` (Jack + tools),
-`src/mandate.ts`, `src/matching.ts`, `src/negotiation.ts` (Jill), `src/supplier-sim.ts`,
-`src/contract.ts` (mandate enforcement), `src/memory.ts`, `src/wassist.ts` + `src/server.ts` (transport),
-`personas/*.md` (Jack / Jill / supplier).
+Key files: `src/agent/factory.ts` (one Pi-SDK agent factory for both Jack & Jill — system prompt + skill + tools per persona), `src/agent/tools/` (Jack's `extract_mandate`/`find_matches`/`negotiate` + Jill's `make_offer`/`accept_deal`/`escalate`), `skills/jack-sourcing/` + `skills/jill-negotiation/` (persona playbooks loaded on-demand as Pi skills), `personas/*.md` (persona identity + invariants, always-on in the system prompt), `src/mandate.ts`, `src/matching.ts`, `src/negotiation.ts` (Jill sub-session orchestration), `src/supplier-sim.ts`, `src/contract.ts` (mandate enforcement — enforced in code inside `accept_deal`), `src/memory.ts`, `src/wassist.ts` + `src/server.ts` (transport), `src/llm.ts` (single-shot structured completions for the extraction modules).
 
 ## Setup
 
