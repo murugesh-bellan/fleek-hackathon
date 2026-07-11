@@ -52,7 +52,7 @@ interface Product {
   price_per_piece: number;
   units: number | null;
   image_url: string | null;
-  source_url: string | null;
+  url: string;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -101,8 +101,15 @@ function toProduct(item: FleekItem, collection: Collection, seq: number): Produc
     price_per_piece: perPiece,
     units: item.units,
     image_url: item.imageUrl,
-    source_url: item.redirectUrl ? `https://www.joinfleek.com${item.redirectUrl}` : null,
+    url: productUrl(item),
   };
+}
+
+/** Canonical listing URL. `redirectUrl` is the path; fall back to the slug. */
+function productUrl(item: FleekItem): string {
+  const base = 'https://www.joinfleek.com';
+  if (item.redirectUrl) return `${base}${item.redirectUrl}`;
+  return `${base}/products/${item.slug}`;
 }
 
 async function scrapeCollection(collection: Collection, pages: number): Promise<Product[]> {

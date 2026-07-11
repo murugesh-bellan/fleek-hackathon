@@ -70,8 +70,8 @@ export interface Product {
   units: number | null;
   /** Fleek CDN URL. The bytes stay on their CDN — we only ever reference them. */
   imageUrl: string | null;
-  /** Link back to the live listing on joinfleek.com. */
-  sourceUrl: string | null;
+  /** Canonical joinfleek.com product page. */
+  url: string;
 }
 
 /** One page of demo catalog products. */

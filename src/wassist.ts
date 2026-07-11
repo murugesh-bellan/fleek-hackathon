@@ -1,5 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { config } from './config.js';
+import { log } from './log.js';
 
 /**
  * Thin Wassist BYOA client.
@@ -34,19 +35,83 @@ export async function registerByoa(webhookUrl: string): Promise<unknown> {
 }
 
 /**
+ * BYOA reply_callback / webhook response body.
+ * Plain text or rich WhatsApp content — Wassist formats for delivery.
+ * @see https://docs.wassist.app/concepts/bring-your-own-agent
+ */
+export type ReplyPayload =
+  | { content: string }
+  | { content?: string; image: string }
+  | { content?: string; video: string }
+  | { content?: string; audio: string }
+  | { content?: string; document: string }
+  | { contact: { name: string; phone_number: string } }
+  | { location: { latitude: number; longitude: number } };
+
+/** Coerce a plain string into `{ content }` for reply_callback. */
+export function toReplyPayload(reply: string | ReplyPayload): ReplyPayload {
+  return typeof reply === 'string' ? { content: reply } : reply;
+}
+
+/**
  * Async reply via the one-time callback URL from the inbound webhook
  * (valid ~24h). Prefer this when Abhi needs longer than ~5s.
  */
-export async function replyViaCallback(replyCallbackUrl: string, content: string): Promise<void> {
+export async function replyViaCallback(
+  replyCallbackUrl: string,
+  reply: string | ReplyPayload,
+): Promise<void> {
+  const payload = toReplyPayload(reply);
+  let host = '';
+  try {
+    host = new URL(replyCallbackUrl).host;
+  } catch {
+    host = 'invalid';
+  }
+  const body = JSON.stringify(payload);
+  const start = Date.now();
   const res = await fetch(replyCallbackUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
+    body,
   });
+  const ms = Date.now() - start;
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
+    log.warn('reply_callback.fail', {
+      host,
+      status: res.status,
+      ms,
+      detail: detail.slice(0, 200),
+      bodyLen: body.length,
+    });
     throw new Error(`Wassist reply_callback failed (${res.status}): ${detail.slice(0, 200)}`);
   }
+  log.info('reply_callback.ok', { host, status: res.status, ms, bodyLen: body.length });
+}
+
+/**
+ * True only for real Wassist reply_callback URLs.
+ * Rejects probes like https://example.com/cb so we never burn an Abhi turn
+ * or POST replies to an unrelated host.
+ */
+export function isWassistReplyCallback(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+
+  let allowedHost: string;
+  try {
+    allowedHost = new URL(config.wassist.baseUrl).hostname.toLowerCase();
+  } catch {
+    allowedHost = 'wassist.app';
+  }
+  const host = parsed.hostname.toLowerCase();
+  return host === allowedHost || host === 'wassist.app' || host.endsWith('.wassist.app');
 }
 
 /**
@@ -129,10 +194,10 @@ export function signatureFailureMessage(reason: SignatureFailure): string {
 
 /** Stable idempotency key when Wassist does not send a delivery id. */
 export function deliveryKey(
-  inbound: Pick<InboundMessage, 'from' | 'body' | 'replyCallback'>,
+  inbound: Pick<InboundMessage, 'from' | 'body' | 'image' | 'replyCallback'>,
 ): string {
   return createHash('sha256')
-    .update(`${inbound.from}\n${inbound.body}\n${inbound.replyCallback}`)
+    .update(`${inbound.from}\n${inbound.body}\n${inbound.image ?? ''}\n${inbound.replyCallback}`)
     .digest('hex');
 }
 
@@ -159,7 +224,8 @@ export function parseInbound(payload: unknown): InboundMessage | null {
   const replyCallback = p.reply_callback;
   if (typeof phone === 'string' && typeof replyCallback === 'string' && phone && replyCallback) {
     const body = typeof p.message === 'string' ? p.message : '';
-    const image = typeof p.image === 'string' ? p.image : null;
+    const rawImage = typeof p.image === 'string' ? p.image.trim() : '';
+    const image = rawImage || null;
     return { from: phone, body, replyCallback, image };
   }
 

@@ -321,7 +321,7 @@ function rowToProduct(r: typeof products.$inferSelect): Product {
     pricePerPiece: r.pricePerPiece,
     units: r.units,
     imageUrl: r.imageUrl,
-    sourceUrl: r.sourceUrl,
+    url: r.url,
   };
 }
 
@@ -338,7 +338,7 @@ export async function insertProduct(p: Product): Promise<void> {
       pricePerPiece: p.pricePerPiece,
       units: p.units,
       imageUrl: p.imageUrl,
-      sourceUrl: p.sourceUrl,
+      url: p.url,
     })
     .onConflictDoUpdate({
       target: [products.collection, products.id],
@@ -350,7 +350,7 @@ export async function insertProduct(p: Product): Promise<void> {
         pricePerPiece: p.pricePerPiece,
         units: p.units,
         imageUrl: p.imageUrl,
-        sourceUrl: p.sourceUrl,
+        url: p.url,
       },
     });
 }

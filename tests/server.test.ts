@@ -19,7 +19,7 @@ const fixtureProducts: Product[] = [
     pricePerPiece: 9,
     units: 15,
     imageUrl: 'https://cdn.example.test/mens-1.webp',
-    sourceUrl: null,
+    url: 'https://www.joinfleek.com/products/vintage-mix-branded-t-shirts',
   },
   {
     id: 2,
@@ -31,7 +31,7 @@ const fixtureProducts: Product[] = [
     pricePerPiece: 8.66,
     units: 15,
     imageUrl: null,
-    sourceUrl: null,
+    url: 'https://www.joinfleek.com/products/polo-t-shirts',
   },
   {
     id: 1,
@@ -43,7 +43,7 @@ const fixtureProducts: Product[] = [
     pricePerPiece: 9.15,
     units: 12,
     imageUrl: 'https://cdn.example.test/womens-1.webp',
-    sourceUrl: null,
+    url: 'https://www.joinfleek.com/products/upcycled-denim-halter-top',
   },
 ];
 
@@ -187,6 +187,7 @@ describe('createApp', () => {
       currency: 'GBP',
       price_per_piece: 9.15,
       collection: 'womens',
+      url: 'https://www.joinfleek.com/products/upcycled-denim-halter-top',
     });
 
     const missing = await app.request('/api/products/nope');
@@ -202,6 +203,7 @@ describe('createApp', () => {
     expect(product.collection).toBe('mens-unisex');
     expect(product.original_price).toBeUndefined();
     expect(product.price_per_piece).toBe(9);
+    expect(product.url).toBe('https://www.joinfleek.com/products/vintage-mix-branded-t-shirts');
 
     const missing = await app.request('/api/products/mens-unisex/9999');
     expect(missing.status).toBe(404);
@@ -257,5 +259,53 @@ describe('createApp', () => {
     await vi.waitFor(() => {
       expect(processInbound).toHaveBeenCalled();
     });
+  });
+
+  it('POST /webhook accepts image-only BYOA payloads', async () => {
+    vi.spyOn(wassist, 'checkSignature').mockReturnValue({ ok: true });
+    const app = createApp();
+    const payload = {
+      message: '',
+      phone_number: '+14155550102',
+      reply_callback: 'https://wassist.app/api/callback/img',
+      image: 'https://media.wassist.app/bale.png',
+    };
+    const res = await app.request('/webhook', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ content: 'No CUSTOMER message reply' });
+    await vi.waitFor(() => {
+      expect(processInbound).toHaveBeenCalledWith(
+        expect.objectContaining({
+          from: '+14155550102',
+          body: '',
+          image: 'https://media.wassist.app/bale.png',
+        }),
+      );
+    });
+  });
+
+  it('POST /webhook ignores non-Wassist reply_callback hosts without processing', async () => {
+    vi.spyOn(wassist, 'checkSignature').mockReturnValue({ ok: true });
+    const app = createApp();
+    const res = await app.request('/webhook', {
+      method: 'POST',
+      body: JSON.stringify({
+        message: 'probe',
+        phone_number: '+10000000000',
+        reply_callback: 'https://example.com/cb',
+        image: null,
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ content: 'No CUSTOMER message reply' });
+    expect(processInbound).not.toHaveBeenCalled();
+    expect(db.markDelivery).not.toHaveBeenCalled();
   });
 });

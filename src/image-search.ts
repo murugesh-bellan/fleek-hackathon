@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { dot, EMBED_DIMS, embed, generateJSON, imageMessage, type JSONSchema } from './llm.js';
+import { fetchImageContent } from './media.js';
 import type { Product } from './types.js';
 
 const INDEX_PATH = join(
@@ -94,38 +95,20 @@ Describe ONLY what is visually there. Never infer price, grade, or piece count â
 Only name a brand when a logo, label, or spellout is actually legible. An unbranded piece is not a failure; return an empty brand list.
 Describe the lot as a whole: if it is a mixed rail, capture the common thread (garment type, era, colour story), not one outlier.`;
 
-/** OpenAI rejects images above 20MB; base64 inflates by ~33%, so cap the raw bytes. */
-const MAX_IMAGE_BYTES = 14_000_000;
-const FETCH_TIMEOUT_MS = 20_000;
-
 /**
  * Inline an image as a `data:` URI.
  *
  * We deliberately do NOT hand a third-party URL to OpenAI and hope it can reach
- * it: Fleek's CloudFront rejects OpenAI's fetcher, and WhatsApp media URLs are
- * short-lived and may be auth-gated. Fetching the bytes ourselves is the only
- * thing that works for both, and it keeps the failure on our side of the wire
- * where we can see it.
+ * it: Fleek's CloudFront refuses to render its largest images at all, and
+ * WhatsApp media URLs are short-lived and may be auth-gated. Fetching the bytes
+ * ourselves (via `media.ts`, which also downsizes anything too big for the
+ * model) is the only thing that works for both.
  */
 async function toDataUri(image: string): Promise<string> {
   if (image.startsWith('data:')) return image;
-  if (!/^https?:\/\//.test(image)) {
-    throw new Error(`Unsupported image reference (expected http(s) or data: URI): ${image.slice(0, 60)}`);
-  }
-
-  const res = await fetch(image, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; abhi-sourcing/0.1)' },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`image fetch failed (${res.status}) for ${image.slice(0, 80)}`);
-
-  const bytes = Buffer.from(await res.arrayBuffer());
-  if (bytes.byteLength > MAX_IMAGE_BYTES) {
-    throw new Error(`image too large (${(bytes.byteLength / 1e6).toFixed(1)}MB)`);
-  }
-
-  const mime = res.headers.get('content-type')?.split(';')[0]?.trim() || 'image/jpeg';
-  return `data:${mime};base64,${bytes.toString('base64')}`;
+  const content = await fetchImageContent(image);
+  if (!content) throw new Error(`could not load image: ${image.slice(0, 80)}`);
+  return `data:${content.mimeType};base64,${content.data}`;
 }
 
 /** Vision-caption one image into structured visual attributes. */
