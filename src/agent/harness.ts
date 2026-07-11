@@ -1,4 +1,4 @@
-import { runTurn, type Msg, type ToolDef, type ToolCall } from '../llm.js';
+import { type Msg, runTurn, type ToolCall, type ToolDef } from '../llm.js';
 
 /** A tool the harness can execute: its schema plus a handler. */
 export interface Tool {
@@ -17,9 +17,9 @@ export interface AgentResult {
 }
 
 /**
- * The generic agent harness. Persona-agnostic: Jack and Jill are the same
- * function — only `system`, `history`, and `tools` differ. Runs the tool-use
- * loop to completion and returns the assistant's text plus updated history.
+ * The generic agent harness. Abhi (buyer WhatsApp face) uses this tool-use
+ * loop. Sanket (behind-the-scenes negotiator) currently runs via structured
+ * decisions in negotiation.ts — same product, two agents, one buyer thread.
  */
 export async function runAgent(opts: {
   system: string;
@@ -59,10 +59,7 @@ export async function runAgent(opts: {
   return { reply: replies.join('\n\n').trim(), history, toolCalls: executed };
 }
 
-async function executeTool(
-  registry: Map<string, Tool>,
-  call: ToolCall,
-): Promise<unknown> {
+async function executeTool(registry: Map<string, Tool>, call: ToolCall): Promise<unknown> {
   const tool = registry.get(call.name);
   if (!tool) return { error: `Unknown tool: ${call.name}` };
   try {
