@@ -33,6 +33,19 @@ Buyer WhatsApp ─▶ Wassist ─▶ POST /webhook ─▶ interim JSON reply
 
 Key files: `src/agent/factory.ts` (one Pi SDK factory for both agents), `src/agent/tools/` (Abhi's `complete_onboarding`/`extract_mandate`/`find_matches`/`negotiate` and Sanket's `make_offer`/`accept_deal`/`escalate`), `skills/abhi-sourcing/` + `skills/sanket-negotiation/` (on-demand playbooks), `personas/*.md` (always-on identity and invariants), `src/mandate.ts`, `src/matching.ts`, `src/negotiation.ts`, `src/supplier-sim.ts`, `src/contract.ts`, `src/memory.ts`, `src/wassist.ts`, and `src/routes/webhook.ts`.
 
+## Web surface
+
+The same Hono app serves a small server-rendered web funnel (no Vite/React build):
+
+| Route | Purpose |
+|-------|---------|
+| `GET /` | Landing page — one CTA: **Message Abhi on WhatsApp** (`wa.me`) |
+| `GET /collections`, `GET /collections/:slug` | Catalog with per-lot WhatsApp sourcing links |
+| `GET /api/products…` | Catalog product JSON (Postgres `products` table, seeded by `npm run seed`) |
+
+Set `WHATSAPP_NUMBER` to override the sandbox number (`447424845871`). Pages are Hono JSX in
+`src/web/`; styles in `public/web.css`; design tokens in `src/web/DESIGN.md`.
+
 ## Setup
 
 ```bash
