@@ -11,7 +11,9 @@ import type { Bale, Buyer, Supplier } from '../types.js';
 const buyers: Buyer[] = [
   {
     phone: '+14155550101',
-    name: 'Marlowe Vintage (buyer)',
+    name: 'Jordan Marlowe',
+    company: 'Marlowe Vintage',
+    onboardedAt: new Date().toISOString(),
     profile: { brandsPursued: [], notes: [] },
   },
 ];

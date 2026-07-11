@@ -17,9 +17,13 @@ export async function processInbound(inbound: InboundMessage): Promise<string> {
   const supplier = await getSupplierByPhone(from);
   const isSupplier = !!supplier;
   if (!isSupplier && !(await getBuyer(from))) {
+    // First contact — create a bare buyer row; Abhi runs the onboarding
+    // conversation (name + company) via complete_onboarding before anything else.
     await upsertBuyer({
       phone: from,
-      name: 'WhatsApp buyer',
+      name: '',
+      company: null,
+      onboardedAt: null,
       profile: { brandsPursued: [], notes: [] },
     });
   }
