@@ -8,6 +8,7 @@
   },
   "scripts": {
     "seed": "tsx src/scripts/seed.ts",
+    "ingest": "tsx src/scripts/ingest-products.ts",
     "demo": "tsx src/scripts/demo.ts",
     "chat": "tsx src/scripts/chat.ts",
     "start": "tsx src/server.ts",

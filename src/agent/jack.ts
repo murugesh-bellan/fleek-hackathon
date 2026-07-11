@@ -2,7 +2,7 @@ import { runAgent, type Tool } from './harness.js';
 import type { Msg } from '../llm.js';
 import { loadPersona } from '../personas.js';
 import { extractMandate } from '../mandate.js';
-import { llmMatcher } from '../matching.js';
+import { activeMatcher } from '../matching.js';
 import { negotiateSelections } from '../negotiation.js';
 import { learnFromInteraction } from '../memory.js';
 import { getBuyer, getMandate } from '../db/index.js';
@@ -74,7 +74,7 @@ const findMatchesTool: Tool = {
   handler: async (input) => {
     const mandate = await getMandate(String(input.mandateId ?? ''));
     if (!mandate) return { error: 'Unknown mandateId. Call extract_mandate first.' };
-    const ranked = await llmMatcher.rank(mandate);
+    const ranked = await activeMatcher().rank(mandate);
     return {
       mandateId: mandate.id,
       matches: ranked.map((m) => ({

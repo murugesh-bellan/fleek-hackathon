@@ -11,6 +11,14 @@ export const config = {
     reasoning: process.env.MODEL_REASONING ?? 'gpt-4o',
     /** Cheap/fast work: classification, small extractions, supplier sim. */
     fast: process.env.MODEL_FAST ?? 'gpt-4o-mini',
+    /** Semantic retrieval over inventory. */
+    embedding: process.env.MODEL_EMBEDDING ?? 'text-embedding-3-small',
+  },
+  matching: {
+    /** 'vector' = hybrid semantic recall + LLM rerank. 'llm' = score every bale in one prompt. */
+    strategy: (process.env.MATCHER ?? 'vector') as 'vector' | 'llm',
+    /** How many bales survive recall and go to the LLM reranker. */
+    topK: Number(process.env.MATCH_TOP_K ?? 20),
   },
   wassist: {
     apiKey: process.env.WASSIST_API_KEY ?? '',

@@ -40,6 +40,11 @@ export const inventoryBales = pgTable('inventory_bales', {
   grade: text('grade').$type<Grade>().notNull(),
   quantity: integer('quantity').notNull(),
   askPrice: real('ask_price').notNull(),
+  /**
+   * Semantic embedding of the bale, stored as plain JSON rather than pgvector —
+   * at this corpus size we rank in-process, so no extension is required.
+   */
+  embeddingJson: jsonb('embedding_json').$type<number[]>(),
 });
 
 export const mandates = pgTable('mandates', {

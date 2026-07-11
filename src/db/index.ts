@@ -126,7 +126,12 @@ export async function allSuppliers(): Promise<Supplier[]> {
 // Bales
 // ---------------------------------------------------------------------------
 
-export async function insertBale(b: Bale): Promise<void> {
+/**
+ * Insert or update a bale. Pass `embedding` to (re)write its semantic vector;
+ * omit it and any existing vector is left untouched.
+ */
+export async function insertBale(b: Bale, embedding?: number[]): Promise<void> {
+  const vector = embedding ? { embeddingJson: embedding } : {};
   await db()
     .insert(inventoryBales)
     .values({
@@ -139,6 +144,7 @@ export async function insertBale(b: Bale): Promise<void> {
       grade: b.grade,
       quantity: b.quantity,
       askPrice: b.askPrice,
+      ...vector,
     })
     .onConflictDoUpdate({
       target: inventoryBales.id,
@@ -151,8 +157,21 @@ export async function insertBale(b: Bale): Promise<void> {
         grade: b.grade,
         quantity: b.quantity,
         askPrice: b.askPrice,
+        ...vector,
       },
     });
+}
+
+/** A bale plus its stored embedding (null if it was never embedded). */
+export interface EmbeddedBale {
+  bale: Bale;
+  embedding: number[] | null;
+}
+
+/** Every bale with its vector — the corpus the semantic matcher ranks over. */
+export async function allBalesWithEmbeddings(): Promise<EmbeddedBale[]> {
+  const rows = await db().select().from(inventoryBales);
+  return rows.map((r) => ({ bale: rowToBale(r), embedding: r.embeddingJson ?? null }));
 }
 
 function rowToBale(r: typeof inventoryBales.$inferSelect): Bale {
