@@ -1,10 +1,10 @@
+import { type AgentToolResult, defineTool } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
-import { defineTool, type AgentToolResult } from '@earendil-works/pi-coding-agent';
-import { negotiateSelections } from '../../negotiation.js';
 import { getMandate } from '../../db/index.js';
+import { negotiateSelections } from '../../negotiation.js';
 
 /**
- * negotiate: dispatch Jill to negotiate the buyer's chosen bale(s) with the
+ * negotiate: dispatch Sanket to negotiate the buyer's chosen bale(s) with the
  * supplier(s), autonomously within the mandate. Returns, per option, whether
  * it CLOSED (with final terms) or ESCALATED (terms fell outside the mandate).
  */
@@ -12,8 +12,8 @@ export const negotiateTool = defineTool({
   name: 'negotiate',
   label: 'Negotiate',
   description:
-    "Dispatch Jill to negotiate the buyer's chosen option(s) with the supplier, autonomously within the mandate (<= price ceiling, >= grade floor, >= quantity). Call this once the buyer picks which match(es) to pursue. Returns, per option, whether it CLOSED (with final terms) or ESCALATED (terms fell outside the mandate — needs the buyer's call).",
-  promptSnippet: 'Autonomously negotiates chosen bales within the mandate via Jill.',
+    "Dispatch Sanket behind the scenes to negotiate the buyer's chosen option(s) with the supplier, autonomously within the mandate (<= price ceiling, >= grade floor, >= quantity). The buyer stays in this WhatsApp thread with Abhi. Call this once the buyer picks which match(es) to pursue. Returns, per option, whether it CLOSED (with final terms) or ESCALATED (terms fell outside the mandate — needs the buyer's call).",
+  promptSnippet: 'Autonomously negotiates chosen bales within the mandate via Sanket.',
   parameters: Type.Object({
     mandateId: Type.String({ description: 'The mandate id.' }),
     baleIds: Type.Array(Type.String(), {

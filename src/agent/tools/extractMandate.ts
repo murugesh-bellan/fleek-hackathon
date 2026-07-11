@@ -1,5 +1,5 @@
+import { type AgentToolResult, defineTool } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
-import { defineTool, type AgentToolResult } from '@earendil-works/pi-coding-agent';
 import { extractMandate as extractMandateDomain } from '../../mandate.js';
 
 /**

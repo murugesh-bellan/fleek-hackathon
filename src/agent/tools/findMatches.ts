@@ -1,7 +1,7 @@
+import { type AgentToolResult, defineTool } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
-import { defineTool, type AgentToolResult } from '@earendil-works/pi-coding-agent';
-import { llmMatcher } from '../../matching.js';
 import { getMandate } from '../../db/index.js';
+import { llmMatcher } from '../../matching.js';
 
 /**
  * find_matches: score and rank supplier inventory (messy bulk bales) against a
@@ -20,7 +20,9 @@ export const findMatchesTool = defineTool({
     const mandate = await getMandate(params.mandateId);
     if (!mandate) {
       return {
-        content: [{ type: 'text' as const, text: 'Unknown mandateId. Call extract_mandate first.' }],
+        content: [
+          { type: 'text' as const, text: 'Unknown mandateId. Call extract_mandate first.' },
+        ],
         details: { error: 'Unknown mandateId' },
       };
     }

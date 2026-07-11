@@ -1,65 +1,77 @@
-# Jack & Jill
+# Abhi & Sanket
 
-A WhatsApp-native agent system for **B2B secondhand-fashion sourcing**, built on [Fleek](https://fleek.co) + [Wassist](https://wassist.app) for the a16z × Fleek hackathon (Agents & LLMs track).
+WhatsApp-native sourcing agents for **[Fleek](https://joinfleek.com)** — the B2B vintage wholesale marketplace connecting resellers and shops to 1,000+ verified suppliers worldwide. Built with [Wassist](https://wassist.app) for the a16z × Fleek hackathon (Agents & LLMs track).
 
-A buyer states demand in natural language → **Jack** extracts a structured mandate and returns ranked supplier matches with fit rationale → the buyer picks → **Jill** autonomously negotiates within the buyer's mandate → returns a closed deal, all in one WhatsApp thread.
+A buyer texts demand on WhatsApp → **Abhi** (buyer agent) extracts a structured mandate and returns ranked supplier matches with fit rationale → the buyer picks → Abhi dispatches **Sanket** (supplier agent) **behind the scenes** to negotiate within the mandate → Abhi reports the closed deal or escalation — all in **one WhatsApp thread**.
 
 ## The idea
 
-The unsolved, agent-shaped problem downstream of Fleek Sort ("what is this item") is buyer↔supplier **matching + negotiation** — hard because it's async (parties never online together), multi-party, and judgement-under-a-mandate. We build on Sort's output, not the vision layer.
+Fleek already surfaces bulk bales, grading, Demand Hub–style sourcing, and Virtual Handpick. The unsolved, agent-shaped problem is buyer↔supplier **matching + negotiation** — hard because it's async, multi-party, and judgement-under-a-mandate: two agents, each loyal to one side, while humans talk to one face.
 
-- **Jack** faces the buyer. **Jill** faces the supplier. They are literally the *same agent* — one factory (`src/agent/factory.ts`) builds either persona by swapping the system prompt, the on-demand skill, and the scoped tools. Persona is chosen by who's on the other end of the WhatsApp thread. The agent loop itself runs on the [Pi SDK](https://github.com/earendil-works/pi-coding-agent) (`createAgentSession`).
-- Negotiation is **autonomous within a contract**: `≤ price ceiling, ≥ grade floor, ≥ quantity`. Jill auto-closes inside the mandate and escalates to the buyer only when terms fall outside it.
+- **Abhi** is the only WhatsApp face — fiduciary to the buyer. **Sanket** negotiates the supplier side **off-stage** (in-process vs inventory / supplier sim). One Pi SDK factory (`src/agent/factory.ts`) builds either agent by swapping the system prompt, on-demand skill, and scoped tools.
+- Negotiation is **autonomous within a contract**: `≤ price ceiling, ≥ grade floor, ≥ quantity`. Sanket auto-closes inside the mandate and escalates to Abhi (who tells the buyer) only when terms fall outside it.
 - A **memory brain** accretes per-buyer revealed preferences so matching sharpens over time — Fleek's data-flywheel thesis.
 
 ## Architecture
 
 ```
-WhatsApp ─▶ Wassist ─▶ POST /webhook ─▶ verify sig + dedupe ─▶ ACK 200
-                                              │
-                                     router (buyer→Jack / supplier→Jill)
-                                              │
-              ┌───────────────────────────────┼───────────────────────────┐
-        extract_mandate                 find_matches                    negotiate
-        (structured LLM)          (LLM semantic ranking)      (Jill ↔ supplier loop, in-process)
-                                              │
-                          reply pushed via Wassist send API ─▶ WhatsApp
-     Postgres memory brain: buyers · suppliers · inventory_bales · mandates · matches · negotiations · deals
+Buyer WhatsApp ─▶ Wassist ─▶ POST /webhook ─▶ interim JSON reply
+                                    │
+                         background: Abhi (tools)
+                                    │
+              Abhi ──dispatch──▶ Sanket (behind the scenes) + Postgres
+                                    │
+                         Abhi final reply
+                                    │
+              POST reply_callback ─▶ Wassist ─▶ same WhatsApp thread
 ```
 
-Key files: `src/agent/factory.ts` (one Pi-SDK agent factory for both Jack & Jill — system prompt + skill + tools per persona), `src/agent/tools/` (Jack's `extract_mandate`/`find_matches`/`negotiate` + Jill's `make_offer`/`accept_deal`/`escalate`), `skills/jack-sourcing/` + `skills/jill-negotiation/` (persona playbooks loaded on-demand as Pi skills), `personas/*.md` (persona identity + invariants, always-on in the system prompt), `src/mandate.ts`, `src/matching.ts`, `src/negotiation.ts` (Jill sub-session orchestration), `src/supplier-sim.ts`, `src/contract.ts` (mandate enforcement — enforced in code inside `accept_deal`), `src/memory.ts`, `src/wassist.ts` + `src/server.ts` (transport), `src/llm.ts` (single-shot structured completions for the extraction modules).
+| Env var | Meaning |
+|---------|---------|
+| `WASSIST_BASE_URL` | Wassist **platform API** (default `https://wassist.app`) — not your tunnel |
+| `PUBLIC_WEBHOOK_URL` | **Your** public `…/webhook` that Wassist calls (Railway HTTPS or local ngrok) |
+
+Key files: `src/agent/factory.ts` (one Pi SDK factory for both agents), `src/agent/tools/` (Abhi's `complete_onboarding`/`extract_mandate`/`find_matches`/`negotiate` and Sanket's `make_offer`/`accept_deal`/`escalate`), `skills/abhi-sourcing/` + `skills/sanket-negotiation/` (on-demand playbooks), `personas/*.md` (always-on identity and invariants), `src/mandate.ts`, `src/matching.ts`, `src/negotiation.ts`, `src/supplier-sim.ts`, `src/contract.ts`, `src/memory.ts`, `src/wassist.ts`, and `src/routes/webhook.ts`.
 
 ## Setup
 
 ```bash
 npm install
-cp .env.example .env      # add ANTHROPIC_API_KEY (Wassist vars only needed for real WhatsApp)
+cp .env.example .env      # add OPENAI_API_KEY (+ DATABASE_URL)
+npm run db:push           # apply Drizzle schema
 npm run seed              # seed fuzzy bulk-bale inventory + a buyer
 ```
 
 ## Run
 
-**Offline demo (the money-shot without WhatsApp — for rehearsal):**
+**Offline demo (without WhatsApp):**
 ```bash
-npm run demo      # scripted: buyer → ranked matches → pick → negotiate → closed deal
-npm run chat      # interactive: talk to Jack as the buyer in your terminal
+npm run demo
+npm run chat
 ```
 
-**Over real WhatsApp (Wassist):**
+**WhatsApp via Wassist (Railway):**
 ```bash
-# 1. fill WASSIST_API_KEY (+ WASSIST_WEBHOOK_SECRET) in .env
-npm run serve                                   # starts the webhook on :8787
-# 2. expose it, e.g.  ngrok http 8787
-PUBLIC_WEBHOOK_URL=https://<ngrok>/webhook npm run register
-# 3. in the Wassist dashboard, set the returned agent as your number's default
-# 4. text the number from WhatsApp
+# 1. Deploy this service; set WASSIST_API_KEY, DATABASE_URL, OPENAI_API_KEY on Railway
+# 2. Point Wassist at your public webhook:
+PUBLIC_WEBHOOK_URL=https://<service>.up.railway.app/webhook npm run register
+# 3. In the Wassist dashboard, deploy the agent to your WhatsApp number
+# 4. Text the number from WhatsApp
+```
+
+**WhatsApp via Wassist (local):**
+```bash
+npm run serve             # :8787
+ngrok http 8787           # only needed locally — Railway already has HTTPS
+PUBLIC_WEBHOOK_URL=https://<ngrok-host>/webhook npm run register
 ```
 
 ## Test
 
 ```bash
-npm test          # unit tests: contract enforcement + webhook signature/parse
+npm test
 npm run typecheck
+npm run lint              # if Biome is installed
 ```
 
 ## Deliberately unresolved (pending Fleek conversations)

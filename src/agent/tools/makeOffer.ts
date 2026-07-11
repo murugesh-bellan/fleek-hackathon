@@ -1,10 +1,10 @@
-import { Type } from 'typebox';
 import { StringEnum } from '@earendil-works/pi-ai';
-import { defineTool, type AgentToolResult } from '@earendil-works/pi-coding-agent';
-import { supplierReply } from '../../supplier-sim.js';
+import { type AgentToolResult, defineTool } from '@earendil-works/pi-coding-agent';
+import { Type } from 'typebox';
 import { saveNegotiation } from '../../db/index.js';
-import type { Grade, DealTerms } from '../../types.js';
 import type { NegotiationRuntime } from '../../negotiation.js';
+import { supplierReply } from '../../supplier-sim.js';
+import type { DealTerms, Grade } from '../../types.js';
 
 const MAX_ROUNDS = 7;
 
@@ -29,7 +29,9 @@ export function makeOfferTool(state: NegotiationRuntime) {
       'Send a price/terms proposal to the supplier and receive their counter-reply. Use to anchor and converge. Your offer must stay at or below the price ceiling. After too many rounds you must accept or escalate instead.',
     promptSnippet: 'Sends an offer to the supplier and returns their counter.',
     parameters: Type.Object({
-      message: Type.String({ description: 'Your WhatsApp line to the supplier proposing these terms.' }),
+      message: Type.String({
+        description: 'Your WhatsApp line to the supplier proposing these terms.',
+      }),
       ...termsSchema.properties,
     }),
     execute: async (_toolCallId, params): Promise<AgentToolResult<Record<string, unknown>>> => {
@@ -56,7 +58,7 @@ export function makeOfferTool(state: NegotiationRuntime) {
         grade: params.grade,
         quantity: params.quantity,
       };
-      state.neg.transcript.push({ speaker: 'jill', message: params.message, offer: terms });
+      state.neg.transcript.push({ speaker: 'sanket', message: params.message, offer: terms });
       state.neg.currentOffer = terms;
       state.neg.state = 'COUNTERING';
       await saveNegotiation(state.neg);

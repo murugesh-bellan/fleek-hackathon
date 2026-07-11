@@ -1,7 +1,7 @@
-import { generateJSON, type JSONSchema } from './llm.js';
 import { insertMandate } from './db/index.js';
 import { id } from './ids.js';
-import type { Mandate, Grade } from './types.js';
+import { generateJSON, type JSONSchema } from './llm.js';
+import type { Grade, Mandate } from './types.js';
 
 /** Critical fields a mandate needs before matching is worthwhile. */
 export type MissingField = 'quantity' | 'priceCeiling' | 'category';
@@ -37,7 +37,8 @@ const SCHEMA: JSONSchema = {
     },
     priceCeiling: {
       type: 'number',
-      description: 'Max price per unit in USD. Use 0 if not stated (and list "priceCeiling" in missing).',
+      description:
+        'Max price per unit in USD. Use 0 if not stated (and list "priceCeiling" in missing).',
     },
     missing: {
       type: 'array',

@@ -1,13 +1,13 @@
-import { Type } from 'typebox';
 import { StringEnum } from '@earendil-works/pi-ai';
-import { defineTool, type AgentToolResult } from '@earendil-works/pi-coding-agent';
+import { type AgentToolResult, defineTool } from '@earendil-works/pi-coding-agent';
+import { Type } from 'typebox';
 import { escalationNote } from '../../contract.js';
 import { saveNegotiation } from '../../db/index.js';
-import type { Grade, DealTerms } from '../../types.js';
 import type { NegotiationRuntime } from '../../negotiation.js';
+import type { DealTerms, Grade } from '../../types.js';
 
 /**
- * escalate: stop negotiating and hand back to the buyer (via Jack) with the
+ * escalate: stop negotiating and hand back to the buyer (via Abhi) with the
  * best available terms. Use only when the supplier's genuine best-and-final is
  * still outside the contract.
  */
@@ -16,13 +16,17 @@ export function escalateTool(state: NegotiationRuntime) {
     name: 'escalate',
     label: 'Escalate',
     description:
-      "Stop negotiating and hand back to the buyer (via Jack) with the supplier's best available terms. Use only when the supplier's genuine best-and-final is still outside the contract (price above ceiling, grade below floor, or quantity short) after real back-and-forth.",
-    promptSnippet: 'Escalates to the buyer with best available terms when the contract cannot be met.',
+      "Stop negotiating and hand back to the buyer (via Abhi) with the supplier's best available terms. Use only when the supplier's genuine best-and-final is still outside the contract (price above ceiling, grade below floor, or quantity short) after real back-and-forth.",
+    promptSnippet:
+      'Escalates to the buyer with best available terms when the contract cannot be met.',
     parameters: Type.Object({
       message: Type.String({
-        description: 'A brief note for the buyer (via Jack) explaining the gap. Not sent to the supplier.',
+        description:
+          'A brief note for the buyer (via Abhi) explaining the gap. Not sent to the supplier.',
       }),
-      pricePerUnit: Type.Number({ description: "Supplier's best available price per unit in USD." }),
+      pricePerUnit: Type.Number({
+        description: "Supplier's best available price per unit in USD.",
+      }),
       grade: StringEnum(['A', 'B', 'C', 'D'] as const satisfies readonly Grade[], {
         description: "Supplier's best available grade.",
       }),
@@ -42,7 +46,7 @@ export function escalateTool(state: NegotiationRuntime) {
       };
       state.neg.state = 'ESCALATED';
       state.neg.currentOffer = terms;
-      state.neg.transcript.push({ speaker: 'jill', message: params.message, offer: terms });
+      state.neg.transcript.push({ speaker: 'sanket', message: params.message, offer: terms });
       state.neg.outcome = `${params.message} ${escalationNote(terms, state.contract)}`.trim();
       state.done = true;
       await saveNegotiation(state.neg);

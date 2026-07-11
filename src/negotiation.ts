@@ -1,18 +1,11 @@
 import { buildAgent } from './agent/factory.js';
 import { contractOf, escalationNote } from './contract.js';
-import { saveNegotiation, getBale, getSupplier, getMandate } from './db/index.js';
+import { getBale, getMandate, getSupplier, saveNegotiation } from './db/index.js';
 import { id } from './ids.js';
-import type {
-  Mandate,
-  Bale,
-  Supplier,
-  Negotiation,
-  DealTerms,
-  MandateContract,
-} from './types.js';
+import type { Bale, DealTerms, Mandate, MandateContract, Negotiation, Supplier } from './types.js';
 
 /**
- * Mutable state shared between Jill's tools for one bale negotiation. The tools
+ * Mutable state shared between Sanket's tools for one bale negotiation. The tools
  * (make_offer / accept_deal / escalate) close over this and mutate it as they
  * run; `negotiateBale` reads the final state after the agent loop settles.
  */
@@ -48,7 +41,7 @@ export async function negotiateBale(
 
   const runtime: NegotiationRuntime = { neg, contract, bale, supplier, rounds: 0, done: false };
 
-  const session = await buildAgent({ persona: 'jill', jillRuntime: runtime });
+  const session = await buildAgent({ persona: 'sanket', sanketRuntime: runtime });
   try {
     await session.prompt(
       'Begin negotiating the bale above for the buyer. Make your opening offer to the supplier using make_offer, then converge. The moment the supplier terms are inside the contract, call accept_deal. If their best-and-final is outside the contract, call escalate.',
@@ -57,16 +50,16 @@ export async function negotiateBale(
     session.dispose();
   }
 
-  // If the agent loop ended without Jill explicitly closing or escalating
+  // If the agent loop ended without Sanket explicitly closing or escalating
   // (e.g. it ran out of internal steps), force an escalation with the last
   // terms on the table so the buyer always gets a clear outcome.
   if (!runtime.done) {
     neg.state = 'ESCALATED';
-    neg.outcome =
-      (neg.currentOffer
+    neg.outcome = `${
+      neg.currentOffer
         ? `No agreement inside the contract. ${escalationNote(neg.currentOffer, contract)}`
-        : 'No agreement reached.') +
-      ' (Jill did not explicitly conclude.)';
+        : 'No agreement reached.'
+    } (Sanket did not explicitly conclude.)`;
     await saveNegotiation(neg);
   }
 
@@ -81,7 +74,7 @@ export interface NegotiationOutcome {
   outcome: string | null;
 }
 
-/** Negotiate one or more selected bales for a mandate (used by Jack). */
+/** Negotiate one or more selected bales for a mandate (used by Abhi). */
 export async function negotiateSelections(
   mandateId: string,
   baleIds: string[],
@@ -93,12 +86,24 @@ export async function negotiateSelections(
   for (const baleId of baleIds) {
     const bale = await getBale(baleId);
     if (!bale) {
-      outcomes.push({ supplier: '?', baleId, state: 'ESCALATED', terms: null, outcome: 'Unknown bale.' });
+      outcomes.push({
+        supplier: '?',
+        baleId,
+        state: 'ESCALATED',
+        terms: null,
+        outcome: 'Unknown bale.',
+      });
       continue;
     }
     const supplier = await getSupplier(bale.supplierId);
     if (!supplier) {
-      outcomes.push({ supplier: '?', baleId, state: 'ESCALATED', terms: null, outcome: 'Unknown supplier.' });
+      outcomes.push({
+        supplier: '?',
+        baleId,
+        state: 'ESCALATED',
+        terms: null,
+        outcome: 'Unknown supplier.',
+      });
       continue;
     }
     const neg = await negotiateBale(mandate, bale, supplier);

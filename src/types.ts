@@ -1,4 +1,4 @@
-/** Shared domain types for Jack & Jill. */
+/** Shared domain types for Abhi & Sanket. */
 
 export type Grade = 'A' | 'B' | 'C' | 'D';
 
@@ -31,6 +31,9 @@ export interface SupplierProfile {
 export interface Buyer {
   phone: string;
   name: string;
+  company: string | null;
+  /** ISO timestamp once onboarding (name + company captured) is complete; null until then. */
+  onboardedAt: string | null;
   profile: BuyerProfile;
 }
 
@@ -83,7 +86,7 @@ export type NegotiationState = 'OPEN' | 'COUNTERING' | 'CLOSED' | 'ESCALATED';
 
 /** One turn in a negotiation transcript. */
 export interface NegotiationTurn {
-  speaker: 'jill' | 'supplier';
+  speaker: 'sanket' | 'supplier';
   message: string;
   /** Optional structured terms attached to this turn. */
   offer?: DealTerms;

@@ -1,16 +1,16 @@
-import { Type } from 'typebox';
 import { StringEnum } from '@earendil-works/pi-ai';
-import { defineTool, type AgentToolResult } from '@earendil-works/pi-coding-agent';
-import { insideContract, escalationNote } from '../../contract.js';
-import { saveNegotiation, saveDeal } from '../../db/index.js';
+import { type AgentToolResult, defineTool } from '@earendil-works/pi-coding-agent';
+import { Type } from 'typebox';
+import { escalationNote, insideContract } from '../../contract.js';
+import { saveDeal, saveNegotiation } from '../../db/index.js';
 import { id } from '../../ids.js';
-import type { Grade, DealTerms } from '../../types.js';
 import type { NegotiationRuntime } from '../../negotiation.js';
+import type { DealTerms, Grade } from '../../types.js';
 
 /**
  * accept_deal: accept the supplier's current terms and close. Enforces the
  * contract in code: only closes when the terms are inside the mandate; refuses
- * (returns an error) otherwise, so Jill must escalate or keep negotiating.
+ * (returns an error) otherwise, so Sanket must escalate or keep negotiating.
  */
 export function acceptDealTool(state: NegotiationRuntime) {
   return defineTool({
@@ -39,11 +39,11 @@ export function acceptDealTool(state: NegotiationRuntime) {
         grade: params.grade,
         quantity: params.quantity,
       };
-      state.neg.transcript.push({ speaker: 'jill', message: params.message, offer: terms });
+      state.neg.transcript.push({ speaker: 'sanket', message: params.message, offer: terms });
       state.neg.currentOffer = terms;
 
       if (!insideContract(terms, state.contract)) {
-        // Refuse — do not mark done. Jill must keep negotiating or escalate.
+        // Refuse — do not mark done. Sanket must keep negotiating or escalate.
         const note = escalationNote(terms, state.contract);
         return {
           content: [

@@ -1,25 +1,17 @@
 import { eq } from 'drizzle-orm';
+import type { Bale, Buyer, Deal, Mandate, Match, Negotiation, Supplier } from '../types.js';
 import { db } from './client.js';
 import {
   buyers,
-  suppliers,
+  deals,
   inventoryBales,
   mandates,
   matches,
   negotiations,
-  deals,
   processedDeliveries,
+  suppliers,
   threads,
 } from './schema.js';
-import type {
-  Buyer,
-  Supplier,
-  Bale,
-  Mandate,
-  Match,
-  Negotiation,
-  Deal,
-} from '../types.js';
 
 export interface Thread {
   phone: string;
@@ -70,10 +62,16 @@ export async function saveThread(t: Thread): Promise<void> {
 export async function upsertBuyer(b: Buyer): Promise<void> {
   await db()
     .insert(buyers)
-    .values({ phone: b.phone, name: b.name, profileJson: b.profile })
+    .values({
+      phone: b.phone,
+      name: b.name,
+      company: b.company,
+      onboardedAt: b.onboardedAt,
+      profileJson: b.profile,
+    })
     .onConflictDoUpdate({
       target: buyers.phone,
-      set: { name: b.name, profileJson: b.profile },
+      set: { name: b.name, company: b.company, onboardedAt: b.onboardedAt, profileJson: b.profile },
     });
 }
 
@@ -81,7 +79,13 @@ export async function getBuyer(phone: string): Promise<Buyer | null> {
   const rows = await db().select().from(buyers).where(eq(buyers.phone, phone)).limit(1);
   const row = rows[0];
   if (!row) return null;
-  return { phone: row.phone, name: row.name, profile: row.profileJson };
+  return {
+    phone: row.phone,
+    name: row.name,
+    company: row.company,
+    onboardedAt: row.onboardedAt,
+    profile: row.profileJson,
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 {
-  "name": "jack-and-jill",
+  "name": "abhi-and-sanket",
   "version": "0.1.0",
-  "description": "WhatsApp-native agent for B2B secondhand-fashion sourcing (a16z x Fleek hackathon)",
+  "description": "WhatsApp-native Fleek buyer (Abhi) and supplier (Sanket) agents (a16z x Fleek hackathon)",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -17,7 +17,9 @@
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write ."
   },
   "dependencies": {
     "@earendil-works/pi-ai": "^0.80.6",
@@ -33,6 +35,7 @@
     "typescript": "^5.7.3"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.3",
     "@types/node": "^22.10.5",
     "@types/pg": "^8.15.4",
     "drizzle-kit": "^0.31.4",

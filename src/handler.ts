@@ -1,55 +1,66 @@
-import { config } from './config.js';
-import { buildAgent, lastAssistantText, type ToolExec } from './agent/factory.js';
-import { sendMessage, type InboundMessage } from './wassist.js';
-import { getBuyer, getSupplierByPhone, upsertBuyer, getThread, saveThread } from './db/index.js';
-import { learnFromInteraction } from './memory.js';
 import type { AgentSession } from '@earendil-works/pi-coding-agent';
+import { buildAgent, lastAssistantText, type ToolExec } from './agent/factory.js';
+import { getBuyer, getSupplierByPhone, getThread, saveThread, upsertBuyer } from './db/index.js';
+import { learnFromInteraction } from './memory.js';
+import { type InboundMessage, replyViaCallback } from './wassist.js';
 
 /**
- * Resolve persona by counterparty and process one inbound WhatsApp message.
- * Buyer -> Jack. Supplier -> Jill (real-supplier relay; the demo uses in-process
- * Jill, so this path is the optional hybrid). Unknown -> new buyer (Jack).
+ * Process one inbound WhatsApp message on the buyer-facing thread.
+ * Humans talk only to Abhi; Sanket runs behind the scenes during negotiation.
  */
 export async function processInbound(inbound: InboundMessage): Promise<string> {
-  const { from, conversationId, body } = inbound;
+  const { from, body, replyCallback } = inbound;
 
   const supplier = await getSupplierByPhone(from);
   const isSupplier = !!supplier;
   if (!isSupplier && !(await getBuyer(from))) {
-    // First contact — onboard as a buyer.
-    await upsertBuyer({ phone: from, name: 'WhatsApp buyer', profile: { brandsPursued: [], notes: [] } });
+    await upsertBuyer({
+      phone: from,
+      name: '',
+      company: null,
+      onboardedAt: null,
+      profile: { brandsPursued: [], notes: [] },
+    });
   }
 
   const role: 'buyer' | 'supplier' = isSupplier ? 'supplier' : 'buyer';
-  const thread = (await getThread(from)) ?? { phone: from, role, conversationId, history: [] };
+  const thread = (await getThread(from)) ?? {
+    phone: from,
+    role,
+    conversationId: null,
+    history: [],
+  };
   const history = (thread.history ?? []) as AgentSession['messages'];
 
   let reply: string;
   if (role === 'buyer') {
-    const { reply: jackReply, history: nextHistory } = await runJackTurn(from, history, body);
-    reply = jackReply;
-    await saveThread({ phone: from, role, conversationId, history: nextHistory });
+    const result = await runAbhiTurn(from, history, body);
+    reply = result.reply;
+    await saveThread({
+      phone: from,
+      role,
+      conversationId: thread.conversationId,
+      history: result.history,
+    });
   } else {
-    // Real-supplier inbound (optional hybrid mode). In the core demo, Jill runs
-    // in-process during Jack's negotiate tool, so suppliers never text in.
     reply =
       "Thanks — this line is handled by Fleek's sourcing agent. A live negotiation will reach you here when a buyer's mandate matches your stock.";
-    await saveThread({ phone: from, role, conversationId, history });
+    await saveThread({ phone: from, role, conversationId: thread.conversationId, history });
   }
 
-  await deliver(conversationId, reply);
+  await deliver(replyCallback, reply);
   return reply;
 }
 
-/** Run one Jack turn: build the session, prompt, capture tool execs for memory. */
-async function runJackTurn(
+/** Run one Abhi turn: build the session, prompt, capture tool execs for memory. */
+async function runAbhiTurn(
   buyerPhone: string,
   history: AgentSession['messages'],
   userMessage: string,
 ): Promise<{ reply: string; history: AgentSession['messages'] }> {
   const toolExecs: ToolExec[] = [];
   const session = await buildAgent({
-    persona: 'jack',
+    persona: 'abhi',
     buyerPhone,
     history,
     onToolResult: (exec) => toolExecs.push(exec),
@@ -65,12 +76,12 @@ async function runJackTurn(
   }
 }
 
-/** Send the reply over WhatsApp, or log it if Wassist isn't configured (local dev). */
-async function deliver(conversationId: string, reply: string): Promise<void> {
+/** POST the final reply to Wassist reply_callback (or log in local/dev). */
+async function deliver(replyCallback: string, reply: string): Promise<void> {
   if (!reply) return;
-  if (!config.wassist.apiKey) {
-    console.log(`\n[no WASSIST_API_KEY — would send to ${conversationId}]\n${reply}\n`);
+  if (!replyCallback.startsWith('http')) {
+    console.log(`\n[no reply_callback URL — would send]\n${reply}\n`);
     return;
   }
-  await sendMessage(conversationId, reply);
+  await replyViaCallback(replyCallback, reply);
 }

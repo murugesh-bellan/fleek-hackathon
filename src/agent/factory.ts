@@ -1,37 +1,38 @@
-import { type Api, type Model } from '@earendil-works/pi-ai';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { Api, Model } from '@earendil-works/pi-ai';
 import {
+  type AgentSession,
+  type AgentToolResult,
   AuthStorage,
   createAgentSession,
   createExtensionRuntime,
   createSyntheticSourceInfo,
   loadSkillsFromDir,
   ModelRegistry,
+  type ResourceLoader,
   SessionManager,
   SettingsManager,
-  type AgentSession,
-  type AgentToolResult,
-  type ResourceLoader,
   type Skill,
   type ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { config, requireOpenAIKey } from '../config.js';
-import { loadPersona } from '../personas.js';
 import { getBuyer } from '../db/index.js';
+import type { NegotiationRuntime } from '../negotiation.js';
+import { loadPersona } from '../personas.js';
 import type { Buyer } from '../types.js';
+import { acceptDealTool } from './tools/acceptDeal.js';
+import { makeCompleteOnboardingTool } from './tools/completeOnboarding.js';
+import { escalateTool } from './tools/escalate.js';
 import { makeExtractMandateTool } from './tools/extractMandate.js';
 import { findMatchesTool } from './tools/findMatches.js';
-import { negotiateTool } from './tools/negotiate.js';
 import { makeOfferTool } from './tools/makeOffer.js';
-import { acceptDealTool } from './tools/acceptDeal.js';
-import { escalateTool } from './tools/escalate.js';
-import type { NegotiationRuntime } from '../negotiation.js';
+import { negotiateTool } from './tools/negotiate.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const skillsDir = join(here, '..', '..', 'skills');
 
-export type Persona = 'jack' | 'jill';
+export type Persona = 'abhi' | 'sanket';
 
 export interface ToolExec {
   name: string;
@@ -41,17 +42,17 @@ export interface ToolExec {
 
 export interface BuildAgentOptions {
   persona: Persona;
-  /** Buyer phone (Jack only) — drives the dynamic buyer context block. */
+  /** Buyer phone (Abhi only) — drives the dynamic buyer context block. */
   buyerPhone?: string;
   /** Prior conversation history to restore (AgentMessage[]). */
   history?: AgentSession['messages'];
   /** Called for each tool execution (for the memory brain / observability). */
   onToolResult?: (exec: ToolExec) => void;
   /**
-   * Jill only — the negotiation runtime the Jill tools close over. Required
-   * when persona === 'jill'.
+   * Sanket only — the negotiation runtime the Sanket tools close over. Required
+   * when persona === 'sanket'.
    */
-  jillRuntime?: NegotiationRuntime;
+  sanketRuntime?: NegotiationRuntime;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,7 +76,8 @@ function resolveModel(): Model<Api> {
 
 let _model: Model<Api> | undefined;
 function model(): Model<Api> {
-  return (_model ??= resolveModel());
+  if (!_model) _model = resolveModel();
+  return _model;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,7 +86,7 @@ function model(): Model<Api> {
 
 const allSkills: Skill[] = loadSkillsFromDir({ dir: skillsDir, source: 'bundle' }).skills;
 const skillFor = (persona: Persona): Skill[] => {
-  const name = persona === 'jack' ? 'jack-sourcing' : 'jill-negotiation';
+  const name = persona === 'abhi' ? 'abhi-sourcing' : 'sanket-negotiation';
   const skill = allSkills.find((s) => s.name === name);
   if (!skill) return [];
   // Re-tag the source info so it's self-contained (no ~/.pi dependency).
@@ -100,10 +102,17 @@ const skillFor = (persona: Persona): Skill[] => {
 // System prompt — persona identity + invariants + dynamic context.
 // ---------------------------------------------------------------------------
 
-function jackSystemPrompt(buyer: Buyer | null): string {
-  const persona = loadPersona('jack');
+function abhiSystemPrompt(buyer: Buyer | null): string {
+  const persona = loadPersona('abhi');
+  if (!buyer?.onboardedAt) {
+    return (
+      persona +
+      '\n\n---\nBUYER CONTEXT\nNew, unonboarded buyer. You have exactly one tool right now: complete_onboarding. ' +
+      "Do not discuss sourcing yet. Greet them, briefly say who you are, and ask for their name and their store/company name — one short message, both in one ask. Once they've given you both, call complete_onboarding. If they open with a sourcing request before you have their details, acknowledge it briefly but still get their name and company first."
+    );
+  }
   const ctx = buyer
-    ? `\n\n---\nBUYER CONTEXT\nName: ${buyer.name}\nKnown preferences: ${
+    ? `\n\n---\nBUYER CONTEXT\nName: ${buyer.name}${buyer.company ? ` (${buyer.company})` : ''}\nKnown preferences: ${
         buyer.profile.brandsPursued.length
           ? buyer.profile.brandsPursued.join(', ')
           : '(none yet — this may be a new buyer)'
@@ -112,8 +121,8 @@ function jackSystemPrompt(buyer: Buyer | null): string {
   return persona + ctx;
 }
 
-function jillSystemPrompt(runtime: NegotiationRuntime): string {
-  const persona = loadPersona('jill');
+function sanketSystemPrompt(runtime: NegotiationRuntime): string {
+  const persona = loadPersona('sanket');
   const { contract, bale, supplier } = runtime;
   const contractBlock = `\n\n---\nYOUR CONTRACT (hard limits — never break)\nPrice ceiling: $${contract.priceCeiling}/unit (never agree above)\nGrade floor: ${contract.gradeFloor} (never accept below)\nQuantity: at least ${contract.quantity} units (never close short)`;
   const baleBlock = `\n\n---\nTHE BALE\n${bale.description}\nCategory/era: ${bale.category}/${bale.era} | brands: ${bale.brands.join(', ')} | stated grade ${bale.grade} | ~${bale.quantity} units | supplier's opening ask: $${bale.askPrice}/unit\nSupplier: ${supplier.name}`;
@@ -124,11 +133,12 @@ function jillSystemPrompt(runtime: NegotiationRuntime): string {
 // Tools per persona.
 // ---------------------------------------------------------------------------
 
-function jackTools(buyerPhone: string): ToolDefinition[] {
+function abhiTools(buyerPhone: string, onboarded: boolean): ToolDefinition[] {
+  if (!onboarded) return [makeCompleteOnboardingTool(buyerPhone)];
   return [makeExtractMandateTool(buyerPhone), findMatchesTool, negotiateTool];
 }
 
-function jillTools(runtime: NegotiationRuntime): ToolDefinition[] {
+function sanketTools(runtime: NegotiationRuntime): ToolDefinition[] {
   return [makeOfferTool(runtime), acceptDealTool(runtime), escalateTool(runtime)];
 }
 
@@ -155,7 +165,7 @@ function makeLoader(systemPrompt: string, skills: Skill[]): ResourceLoader {
 // ---------------------------------------------------------------------------
 
 /**
- * Build one agent session for a persona. Jack faces the buyer; Jill faces the
+ * Build one agent session for a persona. Abhi faces the buyer; Sanket handles the
  * supplier. Same factory, same loop — only the system prompt, skills, and tools
  * differ. History is restored from `options.history` (AgentMessage[]).
  */
@@ -168,14 +178,16 @@ export async function buildAgent(opts: BuildAgentOptions): Promise<AgentSession>
 
   let systemPrompt: string;
   let tools: ToolDefinition[];
-  if (persona === 'jack') {
+  if (persona === 'abhi') {
     const buyer = opts.buyerPhone ? await getBuyer(opts.buyerPhone) : null;
-    systemPrompt = jackSystemPrompt(buyer);
-    tools = jackTools(opts.buyerPhone ?? '');
+    systemPrompt = abhiSystemPrompt(buyer);
+    tools = abhiTools(opts.buyerPhone ?? '', !!buyer?.onboardedAt);
   } else {
-    if (!opts.jillRuntime) throw new Error('buildAgent: jillRuntime is required for persona "jill"');
-    systemPrompt = jillSystemPrompt(opts.jillRuntime);
-    tools = jillTools(opts.jillRuntime);
+    if (!opts.sanketRuntime) {
+      throw new Error('buildAgent: sanketRuntime is required for persona "sanket"');
+    }
+    systemPrompt = sanketSystemPrompt(opts.sanketRuntime);
+    tools = sanketTools(opts.sanketRuntime);
   }
 
   const { session } = await createAgentSession({
@@ -191,7 +203,7 @@ export async function buildAgent(opts: BuildAgentOptions): Promise<AgentSession>
   });
 
   // Restore prior conversation history.
-  if (opts.history && opts.history.length) {
+  if (opts.history?.length) {
     session.agent.state.messages = [...opts.history];
   }
 
@@ -200,7 +212,7 @@ export async function buildAgent(opts: BuildAgentOptions): Promise<AgentSession>
     session.subscribe((event) => {
       if (event.type !== 'tool_execution_end') return;
       const result = event.result as AgentToolResult<unknown> | undefined;
-      opts.onToolResult!({
+      opts.onToolResult?.({
         name: event.toolName,
         input: (event as { args?: unknown }).args as Record<string, unknown>,
         output: result?.details,
