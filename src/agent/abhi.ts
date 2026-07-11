@@ -11,7 +11,7 @@ import { runAgent, type Tool } from './harness.js';
 /** Build Abhi's dynamic system prompt: persona + buyer context. */
 function abhiSystem(buyer: Buyer | null): string {
   const persona = loadPersona('abhi');
-  if (!buyer || !buyer.onboardedAt) {
+  if (!buyer?.onboardedAt) {
     return (
       persona +
       '\n\n---\nBUYER CONTEXT\nNew, unonboarded buyer. You have exactly one tool right now: complete_onboarding. ' +
@@ -19,9 +19,7 @@ function abhiSystem(buyer: Buyer | null): string {
     );
   }
   const ctx = `\n\n---\nBUYER CONTEXT\nName: ${buyer.name}${buyer.company ? ` (${buyer.company})` : ''}\nKnown preferences: ${
-    buyer.profile.brandsPursued.length
-      ? buyer.profile.brandsPursued.join(', ')
-      : '(none yet)'
+    buyer.profile.brandsPursued.length ? buyer.profile.brandsPursued.join(', ') : '(none yet)'
   }${buyer.profile.notes.length ? `\nNotes: ${buyer.profile.notes.join('; ')}` : ''}`;
   return persona + ctx;
 }
